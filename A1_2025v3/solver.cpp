@@ -11,6 +11,35 @@ using namespace std;
  * plan to demonstrate how to build the Solution object. 
  * * TODO: REPLACE THIS ENTIRE FUNCTION WITH YOUR ALGORITHM.
  */
+
+def create_village_graph()
+{
+
+}
+
+Trip extend(Trip* &trip)
+{
+    
+}
+
+Trip NewTrip()
+{
+    
+}
+
+vector<Solution> Successor(Solution solution){
+    vector<Solution> Successor_List;
+    auto ans= solution;
+    for (auto& Heli:ans)
+    {
+        for (auto& trip:Heli.trips){
+            extend(trip);
+        }
+    }
+
+}
+
+
 Solution solve(const ProblemData& problem) {
     cout << "Starting solver..." << endl;
 
