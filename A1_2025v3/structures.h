@@ -31,6 +31,8 @@ struct Village {
     int id;
     Point coords;
     int population;
+    int meal_need;    // Total meals needed (approximately 9 per person)
+    int other_need;   // Other supplies needed (approximately 1 per person)
 };
 
 struct Helicopter {
@@ -38,6 +40,10 @@ struct Helicopter {
     int home_city_id;
     double weight_capacity;
     double distance_capacity;
+    double distance_travelled;
+    int remaining_dry;
+    int remaining_wet;
+    int remaining_other;
     double fixed_cost; // F
     double alpha;
 };
@@ -62,11 +68,13 @@ struct Trip {
     int dry_food_pickup;
     int perishable_food_pickup;
     int other_supplies_pickup;
+    double dist_travelled;
     vector<Drop> drops;
 };
 
 struct HelicopterPlan {
-    int helicopter_id;
+    int helicopter_id; 
+    
     vector<Trip> trips;
 };
 
