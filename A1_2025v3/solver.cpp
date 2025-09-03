@@ -102,7 +102,7 @@ Solution GET_A_RANDOM_STATE(){
     // Create random trips for each helicopter
     for(int h = 0; h < NUM_HELICOPTERS; h++) {
         const Helicopter& heli = PROBLEM.helicopters[h];
-        Point home_city = PROBLEM.cities[heli.home_city_id];
+        Point home_city = PROBLEM.cities[heli.home_city_id - 1];  // Convert to 0-based index
         double used_distance = 0.0;
         
         // Add 1-3 random trips per helicopter
@@ -155,7 +155,7 @@ Solution GET_A_RANDOM_STATE(){
                 trip.dist_travelled = round_trip_dist;
                 
                 Drop drop;
-                drop.village_id = selected_village;
+                drop.village_id = PROBLEM.villages[selected_village].id;  // Use actual village ID, not index
                 drop.dry_food = dry_amount;
                 drop.perishable_food = perishable_amount;
                 drop.other_supplies = other_amount;
@@ -186,7 +186,7 @@ Solution S1(const Solution& current_solution) {
             helicopter_candidates.push_back(heli.id);
         }
     }
-    
+
     if(helicopter_candidates.empty()) return current_solution; // No feasible helicopter
     
     int selected_heli_id = helicopter_candidates[rand() % helicopter_candidates.size()];
@@ -201,7 +201,7 @@ Solution S1(const Solution& current_solution) {
     }
     if(!heli) return current_solution;
     
-    Point home_city = PROBLEM.cities[heli->home_city_id];
+    Point home_city = PROBLEM.cities[heli->home_city_id - 1];  // Convert to 0-based index
     
     // Find which index this helicopter has in the solution
     int solution_index = -1;
@@ -260,7 +260,7 @@ Solution S1(const Solution& current_solution) {
         new_trip.dist_travelled = round_trip_dist;
         
         Drop drop;
-        drop.village_id = selected_village;
+        drop.village_id = PROBLEM.villages[selected_village].id;  // Use actual village ID, not index
         drop.dry_food = dry_delivery;
         drop.perishable_food = perishable_delivery;
         drop.other_supplies = other_delivery;
@@ -308,7 +308,7 @@ Solution S2(const Solution& current_solution){
     if(!heli) return current_solution;
     
     Trip& trip = new_solution[solution_index].trips[trip_id];
-    Point home_city = PROBLEM.cities[heli->home_city_id];
+    Point home_city = PROBLEM.cities[heli->home_city_id - 1];  // Convert to 0-based index
     
     // Calculate current trip route and remaining capacity
     double current_weight = trip.dry_food_pickup * DRY_WEIGHT + 
@@ -383,7 +383,7 @@ Solution S2(const Solution& current_solution){
         
         // Add new drop
         Drop new_drop;
-        new_drop.village_id = selected_village;
+        new_drop.village_id = PROBLEM.villages[selected_village].id;  // Use actual village ID, not index
         new_drop.dry_food = dry_delivery;
         new_drop.perishable_food = perishable_delivery;
         new_drop.other_supplies = other_delivery;
@@ -474,6 +474,7 @@ Solution solve(const ProblemData& problem) {
     WET_WEIGHT = problem.packages[1].weight;
     OTHER_WEIGHT = problem.packages[2].weight;
     MAX_DIST_OF_EACH_HELI = problem.d_max;
+    MAX_DIST_OF_EACH_HELI-=1;
     NUM_HELICOPTERS = problem.helicopters.size();
     NUM_VILLAGES = problem.villages.size();
     NUM_CITIES = problem.cities.size();
@@ -484,6 +485,18 @@ Solution solve(const ProblemData& problem) {
     cout << "Package values (dry, wet, other): " << DRY_VAL << ", " << WET_VAL << ", " << OTHER_VAL << endl;
     cout << "Package weights (dry, wet, other): " << DRY_WEIGHT << ", " << WET_WEIGHT << ", " << OTHER_WEIGHT << endl;
     cout << "Max distance per helicopter: " << MAX_DIST_OF_EACH_HELI << endl;
+    
+    // Debug: print cities and helicopters
+    cout << "Cities: ";
+    for(size_t i = 0; i < PROBLEM.cities.size(); i++) {
+        cout << i << ":(" << PROBLEM.cities[i].x << "," << PROBLEM.cities[i].y << ") ";
+    }
+    cout << endl;
+    cout << "Helicopters: ";
+    for(size_t i = 0; i < PROBLEM.helicopters.size(); i++) {
+        cout << "ID:" << PROBLEM.helicopters[i].id << " home_city:" << PROBLEM.helicopters[i].home_city_id << " ";
+    }
+    cout << endl;
     
     // Use random restart local search
     Solution solution = RANDOM_RESTART_LOCAL_SEARCH();
