@@ -2,6 +2,7 @@
 #include <iostream>
 #include <chrono>
 #include <unordered_map>
+#include <map>
 #include <algorithm>
 using namespace std;
 // You can add any helper functions or classes you need here.
@@ -13,7 +14,38 @@ using namespace std;
  * * TODO: REPLACE THIS ENTIRE FUNCTION WITH YOUR ALGORITHM.
  */
 
-vector<vector<double>> create_village_graph_optimized(const ProblemData& Problem) {
+map<int,int> village_id_to_idx;
+map<int,int> heli_id_to_idx;
+
+
+double EVALUATE_VALUE(const ProblemData& problem, const Solution& solution){
+    double total_value = 0.0;
+    double total_cost = 0.0;
+
+    for(const auto &heli_plan:solution){
+        int heli_id = heli_plan.helicopter_id;
+        const Helicopter* heli_ptr = heli_id_to_idx.count(heli_id) ? &problem.helicopters[heli_id_to_idx[heli_id]] : nullptr;
+        if (!heli_ptr) continue; // Invalid helicopter ID, skip
+        
+        for(const auto &trip:heli_plan.trips){
+            // Calculate value from drops
+            for(const auto &drop:trip.drops){
+                const Village* village_ptr = village_id_to_idx.count(drop.village_id) ? &problem.villages[village_id_to_idx[drop.village_id]] : nullptr;
+                if (!village_ptr) continue; // Invalid village ID, skip
+                
+                total_value += drop.dry_food * problem.packages[0].value;
+                total_value += drop.perishable_food * problem.packages[1].value;
+                total_value += drop.other_supplies * problem.packages[2].value;
+            }
+            // Calculate cost from distance
+            total_cost += heli_ptr->alpha * trip.distance_covered;
+        }
+    }
+    return total_value - total_cost;
+}
+
+
+vector<vector<double>> create_village_graph_optimized(ProblemData& Problem) {
     auto villist = Problem.villages;
     int n = villist.size();
     vector<vector<double>> adjacency(n, vector<double>(n, 0.0));
@@ -25,8 +57,7 @@ vector<vector<double>> create_village_graph_optimized(const ProblemData& Problem
             adjacency[i][j] = dist;
             adjacency[j][i] = dist;
         }
-    }
-    
+    } 
     return adjacency;
 }
 
@@ -195,6 +226,51 @@ pair<Trip, double> extend_with_value(Trip& trip, Helicopter& helicopter, Village
     }
 }
 
+void S1(Solution& solution, ProblemData& problem){
+    // extend a trip function
+    // selecting a random helicopter
+    int heli_index = rand() % problem.helicopters.size();
+    auto& heli_plan = solution[heli_index];
+    auto& helicopter = problem.helicopters[heli_index];
+    // selecting a random trip
+    int trip_index = rand() % heli_plan.trips.size();
+    auto& trip = heli_plan.trips[trip_index];
+
+    // Get value/weight ratios from problem data
+    double dry_food_ratio = problem.packages[0].value / problem.packages[0].weight;
+    double perishable_ratio = problem.packages[1].value / problem.packages[1].weight;
+    double other_ratio = problem.packages[2].value / problem.packages[2].weight;
+    bool prefer_perishable = perishable_ratio > dry_food_ratio;
+    double better_food_ratio = prefer_perishable ? perishable_ratio : dry_food_ratio;
+
+    double best_increase = 0.0;
+    if(!trip.drops.empty()){
+        // adding drop to the back of this current trip drops
+        int last_village_id = trip.drops.back().village_id;
+        int last_village_idx = village_id_to_idx[last_village_id];
+
+        for(int i=0;i<problem.villages.size();i++){
+            auto& new_village = problem.villages[i];
+
+            double dist_last_to_new = distance(problem.villages[last_village_idx].coords, new_village.coords);
+            double dist_new_to_home = distance(new_village.coords, problem.cities[helicopter.home_city_id-1]);
+            double dist_last_to_home = distance(problem.villages[last_village_idx].coords, problem.cities[helicopter.home_city_id-1]);
+            double distance_extension = dist_last_to_new + dist_new_to_home - dist_last_to_home;
+            if(trip.distance_covered + distance_extension > helicopter.distance_capacity -0.1){// 0.1 for being safe for precision error will change later accordingly
+                continue;
+            } 
+        } 
+    }else{
+        // adding first drop
+    } 
+}
+
+
+void SUCCESSOR_FUNCTION(Solution& solution, ProblemData& problem){
+    // choosing a random successor function
+    S1(solution, problem);
+
+}
 
 
 
@@ -212,45 +288,76 @@ vector<Solution> Successor(Solution solution){
             // extend(&trip);
         }
     }
-
 }
 
 
-Solution solve(const ProblemData& problem) {
-    cout << "Starting solver..." << endl;
-
+Solution GET_RANDOM_STATE(ProblemData& problem){
     Solution solution;
-
-    // --- START OF PLACEHOLDER LOGIC ---
-    // This is a naive example: send each helicopter on one trip to the first village.
-    // This will definitely violate constraints but shows the structure.
-    
-    for (const auto& helicopter : problem.helicopters) {
-        HelicopterPlan plan;
-        plan.helicopter_id = helicopter.id;
-
-        if (!problem.villages.empty()) {
-            Trip trip;
-            // Pickup 1 of each package type
-            trip.dry_food_pickup = 1;
-            trip.perishable_food_pickup = 1;
-            trip.other_supplies_pickup = 1;
-
-            // Drop them at the first village
-            Drop drop;
-            drop.village_id = problem.villages[0].id;
-            drop.dry_food = 1;
-            drop.perishable_food = 1;
-            drop.other_supplies = 1;
-
-            trip.drops.push_back(drop);
-            plan.trips.push_back(trip);
-        }
-        solution.push_back(plan);
+    for(int i=0;i<problem.helicopters.size();i++){
+        HelicopterPlan heli_plan;
+        heli_plan.helicopter_id = problem.helicopters[i].id;
+        // Create a single trip for each helicopter
+        Trip trip;
+        trip.dry_food_pickup = 0;
+        trip.perishable_food_pickup = 0;
+        trip.other_supplies_pickup = 0;
+        trip.distance_covered = 0.0;
+        trip.weight_carried = 0;
+        // Initially no drops
+        heli_plan.trips.push_back(trip);
+        solution.push_back(heli_plan);
     }
-    
-    // --- END OF PLACEHOLDER LOGIC ---
 
+    // returning empty solution for now
+    return solution;
+}
+
+void RESET_PROBLEM(ProblemData& problem){
+    for (auto& village:problem.villages){
+        village.food_needed = 9*village.population;
+        village.other_supplies_needed = village.population;
+    }
+    for(auto& heli:problem.helicopters){
+        heli.total_distance_covered = 0.0;
+    }
+}
+
+
+Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem) {
+    Solution best_solution;
+    double best_value = -1e18;
+    
+    int restarts = 100;
+    while(restarts--){
+        RESET_PROBLEM(problem);
+        Solution current_solution = GET_RANDOM_STATE(problem);
+        double current_value = EVALUATE_VALUE(problem, current_solution);
+        int local_iterations = 10;
+        while(local_iterations--) {
+            SUCCESSOR_FUNCTION(current_solution, problem);
+            current_value = EVALUATE_VALUE(problem, current_solution);
+            if (current_value > best_value) {
+                best_value = current_value;
+                best_solution = current_solution;
+                local_iterations = 10; // Reset local iterations on improvement
+            }
+        }
+    }
+    return best_solution;
+}
+
+
+Solution solve(ProblemData& problem) {
+    cout << "Starting solver..." << endl;
+    RESET_PROBLEM(problem);
+    Solution solution;
+    // Map helicopter IDs to their indices 
+    for (int i = 0; i < problem.helicopters.size(); ++i) heli_id_to_idx[problem.helicopters[i].id] = i;
+    // Map village IDs to their indices 
+    for (int i = 0; i < problem.villages.size(); ++i) village_id_to_idx[problem.villages[i].id] = i;
+
+    solution = RANDOM_RESTART_LOCAL_SEARCH(problem);
+    cout<<"Value of solution: "<<EVALUATE_VALUE(problem, solution)<<endl;
     cout << "Solver finished." << endl;
     return solution;
 }

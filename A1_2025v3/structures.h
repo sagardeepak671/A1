@@ -17,9 +17,10 @@ struct Point {
  * @brief Calculates the Euclidean distance between two points.
  */
 inline double distance(const Point& p1, const Point& p2) {
-    return sqrt(pow(p1.x - p2.x, 2) + pow(p1.y - p2.y, 2));
-}
-
+    double dx = p1.x - p2.x;
+    double dy = p1.y - p2.y;
+    return sqrt(dx*dx + dy*dy);
+} 
 
 // --- PROBLEM & SOLUTION STRUCTURES (remaining definitions are the same) ---
 
