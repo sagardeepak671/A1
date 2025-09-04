@@ -22,7 +22,6 @@ using namespace std;
     so village , helicopter index are id-1
 */
 
-
 double EVALUATE_VALUE(const ProblemData& problem, const Solution& solution){
     double total_value = 0.0;
     double total_cost = 0.0;
@@ -71,8 +70,7 @@ unordered_map<int, int> village_id_to_adj_index(const ProblemData& problem) {
     unordered_map<int, int> id_to_index;
     for (int i = 0; i < villages.size(); i++) {
         id_to_index[villages[i].id] = i;
-    }
-    
+    } 
     return id_to_index;
 }
 
@@ -299,50 +297,16 @@ vector<Solution> Successor(Solution solution){
     }
 }
 
-
-Solution GET_RANDOM_STATE(ProblemData& problem){
-    Solution solution;
-    for(int i=0;i<problem.helicopters.size();i++){
-        HelicopterPlan heli_plan;
-        heli_plan.helicopter_id = problem.helicopters[i].id;
-        // Create a single trip for each helicopter
-        Trip trip;
-        trip.dry_food_pickup = 0;
-        trip.perishable_food_pickup = 0;
-        trip.other_supplies_pickup = 0;
-        trip.distance_covered = 0.0;
-        trip.weight_carried = 0;
-        // Initially no drops
-        heli_plan.trips.push_back(trip);
-        solution.push_back(heli_plan);
-    }
-
-    // returning empty solution for now
-
-
-    return solution;
-}
-
-void RESET_PROBLEM(ProblemData& problem){
-    for (auto& village:problem.villages){
-        village.food_needed = 9*village.population;
-        village.other_supplies_needed = village.population;
-    }
-    for(auto& heli:problem.helicopters){
-        heli.total_distance_covered = 0.0;
-    }
-}
-
-
 Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem) {
     Solution best_solution;
     double best_value = -1e18;
     
-    int restarts = 100;
-    while(restarts--){
+    int restarts = 1;
+    while(restarts<100){
         RESET_PROBLEM(problem);
-        Solution current_solution = GET_RANDOM_STATE(problem);
+        Solution current_solution = GET_RANDOM_STATE(problem,restarts);
         double current_value = EVALUATE_VALUE(problem, current_solution);
+
         int local_iterations = 10;
         while(local_iterations--) {
             SUCCESSOR_FUNCTION(current_solution, problem);
@@ -353,14 +317,19 @@ Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem) {
                 local_iterations = 10; // Reset local iterations on improvement
             }
         }
+        if(restarts==1){
+            // getting the random soultion constarins for each helicopter
+            UPDATE_RANDOM_STATS(problem, current_solution);
+        }
+        restarts++;
     }
     return best_solution;
 }
 
-
 Solution solve(ProblemData& problem) {
     cout << "Starting solver..." << endl;
     RESET_PROBLEM(problem);
+    RAND_INIT_STATS.resize(problem.helicopters.size());
     Solution solution; 
     
     solution = RANDOM_RESTART_LOCAL_SEARCH(problem);

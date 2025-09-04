@@ -1,5 +1,5 @@
-#ifndef HELPER_H
-#define HELPER_H
+#ifndef RANDOM_GENERATOR_H
+#define RANDOM_GENERATOR_H
 
 #include "structures.h"
 #include <vector>
@@ -10,14 +10,6 @@ struct random_stats{
 };
 
 extern std::vector<random_stats> RAND_INIT_STATS;
-
-/**
- * @brief Checks if a solution is feasible and provides detailed debugging information.
- * @param solution The solution to check for feasibility.
- * @param problem The problem data containing constraints.
- * @return True if the solution is feasible, false otherwise.
- */
-bool IS_FEASIBLE(const Solution& solution, const ProblemData& problem);
 
 /**
  * @brief Generates random state 1 for a helicopter
@@ -44,4 +36,4 @@ void UPDATE_RANDOM_STATS(ProblemData& problem, Solution& solution);
  */
 void RESET_PROBLEM(ProblemData& problem);
 
-#endif // HELPER_H
+#endif // RANDOM_GENERATOR_H
