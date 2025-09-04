@@ -14,8 +14,12 @@ using namespace std;
  * * TODO: REPLACE THIS ENTIRE FUNCTION WITH YOUR ALGORITHM.
  */
 
-map<int,int> village_id_to_idx;
-map<int,int> heli_id_to_idx;
+// map<int,int> village_id_to_idx;
+// map<int,int> heli_id_to_idx;
+/*
+    village and helicopter id are index in vector +1
+    so village , helicopter index are id-1
+*/
 
 
 double EVALUATE_VALUE(const ProblemData& problem, const Solution& solution){
@@ -24,13 +28,13 @@ double EVALUATE_VALUE(const ProblemData& problem, const Solution& solution){
 
     for(const auto &heli_plan:solution){
         int heli_id = heli_plan.helicopter_id;
-        const Helicopter* heli_ptr = heli_id_to_idx.count(heli_id) ? &problem.helicopters[heli_id_to_idx[heli_id]] : nullptr;
+        const Helicopter* heli_ptr = &problem.helicopters[heli_id-1];
         if (!heli_ptr) continue; // Invalid helicopter ID, skip
         
         for(const auto &trip:heli_plan.trips){
             // Calculate value from drops
             for(const auto &drop:trip.drops){
-                const Village* village_ptr = village_id_to_idx.count(drop.village_id) ? &problem.villages[village_id_to_idx[drop.village_id]] : nullptr;
+                const Village* village_ptr = &problem.villages[drop.village_id-1];
                 if (!village_ptr) continue; // Invalid village ID, skip
                 
                 total_value += drop.dry_food * problem.packages[0].value;
@@ -247,7 +251,7 @@ void S1(Solution& solution, ProblemData& problem){
     if(!trip.drops.empty()){
         // adding drop to the back of this current trip drops
         int last_village_id = trip.drops.back().village_id;
-        int last_village_idx = village_id_to_idx[last_village_id];
+        int last_village_idx = last_village_id - 1;
 
         for(int i=0;i<problem.villages.size();i++){
             auto& new_village = problem.villages[i];
@@ -259,10 +263,19 @@ void S1(Solution& solution, ProblemData& problem){
             if(trip.distance_covered + distance_extension > helicopter.distance_capacity -0.1){// 0.1 for being safe for precision error will change later accordingly
                 continue;
             } 
+
+            
+
         } 
     }else{
         // adding first drop
+
     } 
+
+
+
+
+
 }
 
 
@@ -350,12 +363,8 @@ Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem) {
 Solution solve(ProblemData& problem) {
     cout << "Starting solver..." << endl;
     RESET_PROBLEM(problem);
-    Solution solution;
-    // Map helicopter IDs to their indices 
-    for (int i = 0; i < problem.helicopters.size(); ++i) heli_id_to_idx[problem.helicopters[i].id] = i;
-    // Map village IDs to their indices 
-    for (int i = 0; i < problem.villages.size(); ++i) village_id_to_idx[problem.villages[i].id] = i;
-
+    Solution solution; 
+    
     solution = RANDOM_RESTART_LOCAL_SEARCH(problem);
     cout<<"Value of solution: "<<EVALUATE_VALUE(problem, solution)<<endl;
     cout << "Solver finished." << endl;
