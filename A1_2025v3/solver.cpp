@@ -1,4 +1,5 @@
 #include "solver.h"
+#include "helper.h"
 #include <iostream>
 #include <chrono>
 #include <unordered_map>
@@ -270,12 +271,7 @@ void S1(Solution& solution, ProblemData& problem){
     }else{
         // adding first drop
 
-    } 
-
-
-
-
-
+    }  
 }
 
 
@@ -322,6 +318,8 @@ Solution GET_RANDOM_STATE(ProblemData& problem){
     }
 
     // returning empty solution for now
+
+
     return solution;
 }
 
@@ -367,6 +365,10 @@ Solution solve(ProblemData& problem) {
     
     solution = RANDOM_RESTART_LOCAL_SEARCH(problem);
     cout<<"Value of solution: "<<EVALUATE_VALUE(problem, solution)<<endl;
+    
+    // Check feasibility of the solution
+    IS_FEASIBLE(solution, problem);
+    
     cout << "Solver finished." << endl;
     return solution;
 }
