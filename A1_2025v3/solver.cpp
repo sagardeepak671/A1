@@ -5,9 +5,15 @@
 #include <unordered_map>
 #include <map>
 #include <algorithm>
+#include <random>
+
+std::random_device rd;
+std::mt19937 gen(rd()); // Mersenne Twister engine
+std::uniform_real_distribution<> dist(0.0, 1.0);
+
 using namespace std;
 // You can add any helper functions or classes you need here.
-
+constexpr double EPSILON = 1e-6;
 /**
  * @brief The main function to implement your search/optimization algorithm.
  * * This is a placeholder implementation. It creates a simple, likely invalid,
@@ -21,6 +27,16 @@ using namespace std;
     village and helicopter id are index in vector +1
     so village , helicopter index are id-1
 */
+struct ExtResult {
+    Drop drop;
+    double value_increase;
+    double distance_extension;
+    
+    // Constructor
+    ExtResult(Drop d, double v, double dist, double w)
+        : drop(d), value_increase(v), distance_extension(dist) {}
+};
+
 
 double EVALUATE_VALUE(const ProblemData& problem, const Solution& solution){
     double total_value = 0.0;
@@ -49,100 +65,92 @@ double EVALUATE_VALUE(const ProblemData& problem, const Solution& solution){
 }
 
 
-vector<vector<double>> create_village_graph_optimized(ProblemData& Problem) {
-    auto villist = Problem.villages;
-    int n = villist.size();
-    vector<vector<double>> adjacency(n, vector<double>(n, 0.0));
+// vector<vector<double>> create_village_graph(ProblemData& Problem) {
+//     auto villist = Problem.villages;
+//     int n = villist.size();
+//     vector<vector<double>> adjacency(n, vector<double>(n, 0.0));
     
-    for (int i = 0; i < n; i++) {
-        adjacency[i][i] = 0.0;
-        for (int j = i + 1; j < n; j++) {
-            double dist = distance(villist[i].coords, villist[j].coords);
-            adjacency[i][j] = dist;
-            adjacency[j][i] = dist;
-        }
-    } 
-    return adjacency;
-}
+//     for (int i = 0; i < n; i++) {
+//         adjacency[i][i] = 0.0;
+//         for (int j = i + 1; j < n; j++) {
+//             double dist = distance(villist[i].coords, villist[j].coords);
+//             adjacency[i][j] = dist;
+//             adjacency[j][i] = dist;
+//         }
+//     } 
+//     return adjacency;
+// }
 
-unordered_map<int, int> village_id_to_adj_index(const ProblemData& problem) {
-    const auto& villages = problem.villages;
-    unordered_map<int, int> id_to_index;
-    for (int i = 0; i < villages.size(); i++) {
-        id_to_index[villages[i].id] = i;
-    } 
-    return id_to_index;
-}
+// unordered_map<int, int> village_id_to_adj_index(const ProblemData& problem) {
+//     const auto& villages = problem.villages;
+//     unordered_map<int, int> id_to_index;
+//     for (int i = 0; i < villages.size(); i++) {
+//         id_to_index[villages[i].id] = i;
+//     } 
+//     return id_to_index;
+// }
 
-pair<Trip, double> extend_with_value(Trip& trip, Helicopter& helicopter, Village& new_village, 
-                                    const ProblemData& problem,
-                                    const vector<vector<double>>& adjacency,
-                                    const unordered_map<int, int>& id_to_index) {
-    
-    // Store original trip state for rollback if needed
-    Trip original_trip = trip;
+ExtResult evaluate_extension(const Trip& trip, const Helicopter& helicopter, 
+                           const Village& new_village, ProblemData& problem, 
+                           double food_percentage) {
     
     // Get helicopter info
-    Point home_city = problem.cities[helicopter.home_city_id];
+    Point home_city = problem.cities[helicopter.home_city_id -1];
+    bool empty_trip = false;
     
     // Check distance constraint
     double distance_extension = 0.0;
     
     if (!trip.drops.empty()) {
-        // Get last village visited
         int last_village_id = trip.drops.back().village_id;
-        int last_idx = id_to_index.at(last_village_id);
-        int new_idx = id_to_index.at(new_village.id);
+        int last_index = last_village_id -1;
+        Village* last_village = &problem.villages[last_index];
         
-        // Calculate distance extension:
-        // dist(last -> new) + dist(new -> home) - dist(last -> home)
-        double dist_last_to_new = adjacency[last_idx][new_idx];
+        double dist_last_to_new = distance(last_village->coords, new_village.coords);
         double dist_new_to_home = distance(new_village.coords, home_city);
-        double dist_last_to_home = distance(
-            problem.villages[last_village_id].coords, home_city);
+        double dist_last_to_home = distance(last_village->coords, home_city);
         
         distance_extension = dist_last_to_new + dist_new_to_home - dist_last_to_home;
     } else {
-        // First village in trip: round trip distance
         distance_extension = 2.0 * distance(new_village.coords, home_city);
+        empty_trip = true;
     }
     
-    // Check if distance constraint is violated
-    if (trip.distance_covered + distance_extension > helicopter.distance_capacity) {
-        return {original_trip, -1e9}; // Return very negative value for infeasible extension
+    // Check feasibility constraints
+    if (trip.distance_covered + distance_extension > helicopter.distance_capacity ) {
+        return ExtResult({-1, 0, 0, 0}, -1e9, 0.0, 0.0);
+    }
+
+    if (helicopter.total_distance_covered + distance_extension > problem.d_max ) {
+        return ExtResult({-1, 0, 0, 0}, -1e9, 0.0, 0.0);
     }
     
-    // Calculate remaining weight capacity
     double remaining_weight = helicopter.weight_capacity - trip.weight_carried;
     if (remaining_weight <= 0) {
-        return {original_trip, -1e9}; // No weight capacity left
+        return ExtResult({-1, 0, 0, 0}, -1e9, 0.0, 0.0);
     }
     
-    // Get value/weight ratios from problem data
-    double dry_food_ratio = problem.packages[0].value / problem.packages[0].weight;
-    double perishable_ratio = problem.packages[1].value / problem.packages[1].weight;
-    double other_ratio = problem.packages[2].value / problem.packages[2].weight;
+    // Get package weights and values
+    double dry_weight = problem.packages[0].weight;
+    double perishable_weight = problem.packages[1].weight;
+    double other_weight = problem.packages[2].weight;
     
-    // Determine which food type has better ratio
-    bool prefer_perishable = perishable_ratio > dry_food_ratio;
-    double better_food_ratio = prefer_perishable ? perishable_ratio : dry_food_ratio;
+    double dry_value = problem.packages[0].value;
+    double perishable_value = problem.packages[1].value;
+    double other_value = problem.packages[2].value;
     
-    // Create priority order: compare best food type with other supplies
-    vector<pair<double, int>> supply_priority;
-    if (better_food_ratio > other_ratio) {
-        supply_priority = {{better_food_ratio, prefer_perishable ? 1 : 0}, {other_ratio, 2}};
-    } else {
-        supply_priority = {{other_ratio, 2}, {better_food_ratio, prefer_perishable ? 1 : 0}};
-    }
+    // Calculate value/weight ratios
+    double dry_ratio = dry_value / dry_weight;
+    double perishable_ratio = perishable_value / perishable_weight;
+    double other_ratio = other_value / other_weight;
     
-    // Add the less preferred food type at the end (in case we have excess capacity)
-    if (prefer_perishable) {
-        supply_priority.push_back({dry_food_ratio, 0});
-    } else {
-        supply_priority.push_back({perishable_ratio, 1});
-    }
+    // Calculate expected food ratio based on weight percentage
+    double expected_food_ratio = food_percentage * dry_ratio + (1.0 - food_percentage) * perishable_ratio;
     
-    // Greedy allocation
+    // Prioritize food if it has better or equal value/weight ratio
+    bool prioritize_food = expected_food_ratio >= other_ratio;
+    
+    // Initialize drop
     Drop new_drop;
     new_drop.village_id = new_village.id;
     new_drop.dry_food = 0;
@@ -150,86 +158,164 @@ pair<Trip, double> extend_with_value(Trip& trip, Helicopter& helicopter, Village
     new_drop.other_supplies = 0;
     
     double weight_to_drop = 0.0;
-    double value_gained = 0.0;  // Track value gained from drops
+    double value_gained = 0.0;
+    double available_weight = remaining_weight;
     
-    for (const auto& supply : supply_priority) {
-        int supply_type = supply.second;
-        double supply_weight = problem.packages[supply_type].weight;
-        double supply_value = problem.packages[supply_type].value;
+    int temp_food_needed = new_village.food_needed;
+    int temp_other_needed = new_village.other_supplies_needed;
+    
+    // Allocate based on priority
+    if (prioritize_food && temp_food_needed > 0 && available_weight > 0) {
+        // Allocate food first - split by WEIGHT percentage
         
-        if (remaining_weight <= 0) break;
+        // Calculate target weights for dry and perishable food
+        double target_dry_weight = available_weight * food_percentage;
+        double target_perishable_weight = available_weight * (1.0 - food_percentage);
         
-        int* drop_target = nullptr;
-        int village_need = 0;
+        // Calculate packet counts based on weight targets
+        int dry_packets = (int)(target_dry_weight / dry_weight);
+        int perishable_packets = (int)(target_perishable_weight / perishable_weight);
         
-        switch (supply_type) {
-            case 0: // dry food
-                drop_target = &new_drop.dry_food;
-                village_need = new_village.food_needed;
-                break;
-            case 1: // perishable food
-                drop_target = &new_drop.perishable_food;
-                village_need = new_village.food_needed;
-                break;
-            case 2: // other supplies
-                drop_target = &new_drop.other_supplies;
-                village_need = new_village.other_supplies_needed;
-                break;
-        }
+        // Constrain by village needs
+        dry_packets = min(dry_packets, temp_food_needed);
+        perishable_packets = min(perishable_packets, temp_food_needed - dry_packets);
         
-        if (village_need > 0) {
-            // Calculate how many units we can drop (only constrained by weight and need)
-            int max_by_weight = (int)(remaining_weight / supply_weight);
-            int max_by_need = village_need;
+        // Calculate actual weights
+        double actual_dry_weight = dry_packets * dry_weight;
+        double actual_perishable_weight = perishable_packets * perishable_weight;
+        double total_food_weight = actual_dry_weight + actual_perishable_weight;
+        
+        // Check if it fits in available weight
+        if (total_food_weight <= available_weight && (dry_packets > 0 || perishable_packets > 0)) {
+            new_drop.dry_food = dry_packets;
+            new_drop.perishable_food = perishable_packets;
             
-            int units_to_drop = min(max_by_weight, max_by_need);
+            weight_to_drop += total_food_weight;
+            value_gained += dry_packets * dry_value + perishable_packets * perishable_value;
             
-            if (units_to_drop > 0) {
-                *drop_target = units_to_drop;
-                
-                // Update village needs
-                if (supply_type == 0 || supply_type == 1) {
-                    // Food item
-                    new_village.food_needed -= units_to_drop;
-                } else {
-                    // Other supplies
-                    new_village.other_supplies_needed -= units_to_drop;
-                }
-                
-                double weight_dropped = units_to_drop * supply_weight;
-                weight_to_drop += weight_dropped;
-                remaining_weight -= weight_dropped;
-                
-                // Calculate value gained from this drop
-                value_gained += units_to_drop * supply_value;
-                
-                // Add dropped amounts to pickup amounts (since supplies are unlimited)
-                switch (supply_type) {
-                    case 0: trip.dry_food_pickup += units_to_drop; break;
-                    case 1: trip.perishable_food_pickup += units_to_drop; break;
-                    case 2: trip.other_supplies_pickup += units_to_drop; break;
-                }
-            }
+            temp_food_needed -= (dry_packets + perishable_packets);
+            available_weight -= total_food_weight;
         }
     }
     
-    // Calculate net increase in objective value
+    // Allocate other supplies with remaining capacity
+    if (temp_other_needed > 0 && available_weight >= other_weight) {
+        int other_packets = min(temp_other_needed, (int)(available_weight / other_weight));
+        
+        if (other_packets > 0) {
+            new_drop.other_supplies = other_packets;
+            double actual_other_weight = other_packets * other_weight;
+            
+            weight_to_drop += actual_other_weight;
+            value_gained += other_packets * other_value;
+            available_weight -= actual_other_weight;
+        }
+    }
+    
+    // If we didn't prioritize food initially, try to allocate remaining food
+    if (!prioritize_food && temp_food_needed > 0 && available_weight > 0) {
+        // Use remaining weight for food with same percentage split
+        double remaining_dry_weight = available_weight * food_percentage;
+        double remaining_perishable_weight = available_weight * (1.0 - food_percentage);
+        
+        int additional_dry = min(temp_food_needed, (int)(remaining_dry_weight / dry_weight));
+        int additional_perishable = min(temp_food_needed - additional_dry, 
+                                       (int)(remaining_perishable_weight / perishable_weight));
+        
+        double additional_weight = additional_dry * dry_weight + additional_perishable * perishable_weight;
+        
+        if (additional_weight <= available_weight && (additional_dry > 0 || additional_perishable > 0)) {
+            new_drop.dry_food += additional_dry;
+            new_drop.perishable_food += additional_perishable;
+            
+            weight_to_drop += additional_weight;
+            value_gained += additional_dry * dry_value + additional_perishable * perishable_value;
+        }
+    }
+    
+    // Calculate net value increase
     double cost_increase = helicopter.alpha * distance_extension;
     double net_value_increase = value_gained - cost_increase;
     
-    // Only extend if we're dropping something
+    if (empty_trip) {
+        net_value_increase -= helicopter.fixed_cost;
+    }
+    
     if (weight_to_drop > 0) {
-        trip.drops.push_back(new_drop);
-        trip.distance_covered += distance_extension;
-        trip.weight_carried += weight_to_drop;
-        
-        return {trip, net_value_increase};
+        return ExtResult(new_drop, net_value_increase, distance_extension, weight_to_drop);
     } else {
-        return {original_trip, -1e9}; // No benefit from extension
+        return ExtResult({-1, 0, 0, 0}, -1e9, 0.0, 0.0);
     }
 }
 
-void S1(Solution& solution, ProblemData& problem){
+
+bool find_best_extension(Trip& current_trip, Helicopter& helicopter,
+                                    ProblemData& problem, double percent) {
+    
+    double max_value_increase = -1e9;
+    Drop best_drop = {-1, 0, 0, 0}; // Invalid drop initially
+    int best_village_id = -1;
+    ExtResult best_result = ExtResult({-1, 0, 0, 0}, -1e9, 0.0, 0.0);
+    
+    // Evaluate all villages
+    for (const auto& village : problem.villages) {
+        // Skip if already visited in this trip
+        bool already_visited = false;
+        for (const auto& drop : current_trip.drops) {
+            if (drop.village_id == village.id) {
+                already_visited = true;
+                break;
+            }
+        }
+        if (already_visited) continue;
+        
+        // Evaluate this extension
+        auto result = evaluate_extension(
+            current_trip, helicopter, village, problem, percent);
+        
+        auto potential_drop=result.drop;
+        auto value_increase=result.value_increase;
+        if (value_increase > max_value_increase) {
+            max_value_increase = value_increase;
+            best_drop = potential_drop;
+            best_village_id = village.id;
+            best_result=result;
+        }
+    }
+    int ret=false;
+    if (best_village_id == -1) {
+        return ret; // No valid extension found
+    }
+
+    current_trip.distance_covered+=best_result.distance_extension;
+    // current_trip.weight_carried+=best_result.weight_dropped;
+    helicopter.total_distance_covered+=best_result.distance_extension;
+    problem.villages[best_village_id-1].food_needed-= (best_drop.dry_food + best_drop.perishable_food);
+    problem.villages[best_village_id-1].other_supplies_needed-= best_drop.other_supplies;
+    current_trip.dry_food_pickup += best_drop.dry_food;
+    current_trip.perishable_food_pickup += best_drop.perishable_food;  
+    current_trip.other_supplies_pickup += best_drop.other_supplies;
+    if(current_trip.drops.empty()){
+        ret=true;
+    }
+    current_trip.drops.push_back(best_drop);
+
+
+    // Helper function to compute total weight for a trip
+    auto compute_trip_weight = [](const Trip &trip, const ProblemData &problem) {
+        double total_weight = 0.0;
+
+        total_weight += trip.dry_food_pickup * problem.packages[0].weight + trip.perishable_food_pickup * problem.packages[1].weight + trip.other_supplies_pickup * problem.packages[2].weight;
+        
+        return total_weight;
+    };
+
+    current_trip.weight_carried = compute_trip_weight(current_trip, problem);
+    return ret;
+
+}
+
+void S1(Solution& solution, ProblemData& problem, vector<double> ratio_arr ){
     // extend a trip function
     // selecting a random helicopter
     int heli_index = rand() % problem.helicopters.size();
@@ -238,82 +324,70 @@ void S1(Solution& solution, ProblemData& problem){
     // selecting a random trip
     int trip_index = rand() % heli_plan.trips.size();
     auto& trip = heli_plan.trips[trip_index];
+    double percent = ratio_arr[heli_index];
+    bool create= find_best_extension(trip, helicopter, problem, percent);
+    if (create){
+        Trip empty_trip = {
+                            0,              // dry_food_pickup
+                            0,              // perishable_food_pickup
+                            0,              // other_supplies_pickup
+                            {},             // drops (empty vector)
+                            0.0,            // distance_covered
+                            0.0             // weight_carried
+};
 
-    // Get value/weight ratios from problem data
-    double dry_food_ratio = problem.packages[0].value / problem.packages[0].weight;
-    double perishable_ratio = problem.packages[1].value / problem.packages[1].weight;
-    double other_ratio = problem.packages[2].value / problem.packages[2].weight;
-    bool prefer_perishable = perishable_ratio > dry_food_ratio;
-    double better_food_ratio = prefer_perishable ? perishable_ratio : dry_food_ratio;
-
-    double best_increase = 0.0;
-    if(!trip.drops.empty()){
-        // adding drop to the back of this current trip drops
-        int last_village_id = trip.drops.back().village_id;
-        int last_village_idx = last_village_id - 1;
-
-        for(int i=0;i<problem.villages.size();i++){
-            auto& new_village = problem.villages[i];
-
-            double dist_last_to_new = distance(problem.villages[last_village_idx].coords, new_village.coords);
-            double dist_new_to_home = distance(new_village.coords, problem.cities[helicopter.home_city_id-1]);
-            double dist_last_to_home = distance(problem.villages[last_village_idx].coords, problem.cities[helicopter.home_city_id-1]);
-            double distance_extension = dist_last_to_new + dist_new_to_home - dist_last_to_home;
-            if(trip.distance_covered + distance_extension > helicopter.distance_capacity -0.1){// 0.1 for being safe for precision error will change later accordingly
-                continue;
-            } 
-
-            
-
-        } 
-    }else{
-        // adding first drop
-
-    }  
-}
-
-
-void SUCCESSOR_FUNCTION(Solution& solution, ProblemData& problem){
-    // choosing a random successor function
-    S1(solution, problem);
-
-}
-
-
-
-Trip NewTrip()
-{
-    
-}
-
-vector<Solution> Successor(Solution solution){
-    vector<Solution> Successor_List;
-    auto ans= solution;
-    for (auto& Heli:ans)
-    {
-        for (auto& trip:Heli.trips){
-            // extend(&trip);
-        }
+        heli_plan.trips.push_back(empty_trip);
     }
 }
 
-Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem) {
+
+void SUCCESSOR_FUNCTION(Solution& solution, ProblemData& problem, vector<double> ratio_arr ){
+    // choosing a random successor function
+    S1(solution, problem, ratio_arr);
+
+}
+
+
+// using list = vector<int>;
+
+Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem,
+    std::chrono::time_point<std::chrono::high_resolution_clock, std::chrono::duration<double>> t)
+{
     Solution best_solution;
     double best_value = -1e18;
-    
+    const int helios=problem.helicopters.size();
+    std::vector<double> ratio_list(helios,1.0), old_ratio_list(helios,1.0);
+    std::vector<double> best_ratio_list(helios, 0.0);
     int restarts = 1;
-    while(restarts<100){
+    bool improved=false;
+    while (std::chrono::high_resolution_clock::now() < t){
+        // cout<<restarts;
+        
+        if (!improved){
+            ratio_list=old_ratio_list;
+        }
+        
+        if (restarts>1){
+            int rat_index = rand() % helios;
+            double new_ratio = dist(gen);
+            old_ratio_list = ratio_list;
+            ratio_list[rat_index]=new_ratio;
+        } 
         RESET_PROBLEM(problem);
-        Solution current_solution = GET_RANDOM_STATE(problem,restarts);
+        Solution current_solution = GET_RANDOM_STATE(problem,1);
         double current_value = EVALUATE_VALUE(problem, current_solution);
 
         int local_iterations = 10;
+        improved=false;
         while(local_iterations--) {
-            SUCCESSOR_FUNCTION(current_solution, problem);
+            SUCCESSOR_FUNCTION(current_solution, problem, ratio_list);
             current_value = EVALUATE_VALUE(problem, current_solution);
             if (current_value > best_value) {
+                
                 best_value = current_value;
+                improved=true;
                 best_solution = current_solution;
+                best_ratio_list = ratio_list;
                 local_iterations = 10; // Reset local iterations on improvement
             }
         }
@@ -323,16 +397,40 @@ Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem) {
         }
         restarts++;
     }
+    for (auto&e:best_ratio_list){
+    cout << e << "\n"; 
+    }
+    // Remove empty trips from the solution
+    for (auto& heli_plan : best_solution) {
+        heli_plan.trips.erase(
+            std::remove_if(heli_plan.trips.begin(), heli_plan.trips.end(),
+                [](const Trip& trip) {
+                    // Remove trips with zero pickups and no drops
+                    return (trip.dry_food_pickup == 0 && 
+                            trip.perishable_food_pickup == 0 && 
+                            trip.other_supplies_pickup == 0 && 
+                            trip.drops.empty());
+                }),
+            heli_plan.trips.end()
+        );
+    }
+
     return best_solution;
 }
 
 Solution solve(ProblemData& problem) {
+    auto start_time = std::chrono::high_resolution_clock::now();
+    double seconds = 60.0 * problem.time_limit_minutes-1;
+    auto time_limit = std::chrono::duration<double>(seconds);
+    auto t= time_limit+start_time;
+
+
     cout << "Starting solver..." << endl;
     RESET_PROBLEM(problem);
     RAND_INIT_STATS.resize(problem.helicopters.size());
     Solution solution; 
     
-    solution = RANDOM_RESTART_LOCAL_SEARCH(problem);
+    solution = RANDOM_RESTART_LOCAL_SEARCH(problem,t);
     cout<<"Value of solution: "<<EVALUATE_VALUE(problem, solution)<<endl;
     
     // Check feasibility of the solution
@@ -341,3 +439,29 @@ Solution solve(ProblemData& problem) {
     cout << "Solver finished." << endl;
     return solution;
 }
+
+
+
+    // Get value/weight ratios from problem data
+    // double dry_food_ratio = problem.packages[0].value / problem.packages[0].weight;
+    // double perishable_ratio = problem.packages[1].value / problem.packages[1].weight;
+    // double other_ratio = problem.packages[2].value / problem.packages[2].weight;
+    // bool prefer_perishable = perishable_ratio > dry_food_ratio;
+    // double better_food_ratio = prefer_perishable ? perishable_ratio : dry_food_ratio;
+
+    // double best_increase = 0.0;
+    // if(!trip.drops.empty()){
+    //     // adding drop to the back of this current trip drops
+    //     int last_village_id = trip.drops.back().village_id;
+    //     int last_village_idx = last_village_id - 1;
+
+    //     for(int i=0;i<problem.villages.size();i++){
+    //         auto& new_village = problem.villages[i];
+
+    //         double dist_last_to_new = distance(problem.villages[last_village_idx].coords, new_village.coords);
+    //         double dist_new_to_home = distance(new_village.coords, problem.cities[helicopter.home_city_id-1]);
+    //         double dist_last_to_home = distance(problem.villages[last_village_idx].coords, problem.cities[helicopter.home_city_id-1]);
+    //         double distance_extension = dist_last_to_new + dist_new_to_home - dist_last_to_home;
+    //         if(trip.distance_covered + distance_extension > helicopter.distance_capacity -0.1){// 0.1 for being safe for precision error will change later accordingly
+    //             continue;
+    //         } 

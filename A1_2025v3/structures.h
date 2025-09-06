@@ -36,7 +36,7 @@ struct Village {
     // Additional members for tracking remaining needs
     int food_needed;
     int other_supplies_needed;
-    
+    Village() =default;
     Village(int id, Point coords, int population) 
         : id(id), coords(coords), population(population) {
         // Assume 1 unit per person for each type (adjust as needed)
@@ -78,7 +78,7 @@ struct Trip {
     int other_supplies_pickup;
     vector<Drop> drops;
     double distance_covered;
-    int weight_carried;
+    double weight_carried;
 };
 
 struct HelicopterPlan {
