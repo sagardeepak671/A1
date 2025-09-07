@@ -605,7 +605,7 @@ Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem,
         int a=(250*int(problem.villages.size()+ problem.helicopters.size()));
         int local_iterations = a;
         improved=false;
-        while(local_iterations--) {
+        while(std::chrono::high_resolution_clock::now() < end_time && local_iterations--) {
             SUCCESSOR_FUNCTION(current_solution, problem, ratio_list);        
 
             current_value = EVALUATE_VALUE(problem, current_solution);
@@ -662,7 +662,7 @@ Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem,
 
 Solution solve(ProblemData& problem) {
     auto start_time = std::chrono::high_resolution_clock::now();
-    double seconds = 59.0 * problem.time_limit_minutes; //
+    double seconds = 60.0 * problem.time_limit_minutes-2; //
     auto time_limit = std::chrono::duration<double>(seconds);
     auto end_time= time_limit+start_time;
 
