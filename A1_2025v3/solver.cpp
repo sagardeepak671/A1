@@ -20,13 +20,7 @@ constexpr double EPSILON = 1e-6;
  * plan to demonstrate how to build the Solution object. 
  * * TODO: REPLACE THIS ENTIRE FUNCTION WITH YOUR ALGORITHM.
  */
-
-// map<int,int> village_id_to_idx;
-// map<int,int> heli_id_to_idx;
-/*
-    village and helicopter id are index in vector +1
-    so village , helicopter index are id-1
-*/
+ 
 struct ExtResult {
     Drop drop;
     double value_increase;
@@ -36,6 +30,10 @@ struct ExtResult {
     ExtResult(Drop d, double v, double dist)
         : drop(d), value_increase(v), distance_extension(dist) {}
 };
+
+int TOT_VILLAGES,TOT_HELICOPTERS,D_MAX;
+int DRY_WT,WET_WT,OTHER_WT;
+int DRY_VAL,WET_VAL,OTHER_VAL;
 
 
 double EVALUATE_VALUE(const ProblemData& problem, const Solution& solution){
@@ -211,31 +209,7 @@ void BOOSTER_FUNCTION(Solution& solution, ProblemData& problem) {
     }
 }
 
-
-// vector<vector<double>> create_village_graph(ProblemData& Problem) {
-//     auto villist = Problem.villages;
-//     int n = villist.size();
-//     vector<vector<double>> adjacency(n, vector<double>(n, 0.0));
-    
-//     for (int i = 0; i < n; i++) {
-//         adjacency[i][i] = 0.0;
-//         for (int j = i + 1; j < n; j++) {
-//             double dist = distance(villist[i].coords, villist[j].coords);
-//             adjacency[i][j] = dist;
-//             adjacency[j][i] = dist;
-//         }
-//     } 
-//     return adjacency;
-// }
-
-// unordered_map<int, int> village_id_to_adj_index(const ProblemData& problem) {
-//     const auto& villages = problem.villages;
-//     unordered_map<int, int> id_to_index;
-//     for (int i = 0; i < villages.size(); i++) {
-//         id_to_index[villages[i].id] = i;
-//     } 
-//     return id_to_index;
-// }
+ 
 
 ExtResult evaluate_extension(const Trip& trip, const Helicopter& helicopter, 
                            const Village& new_village, ProblemData& problem, 
@@ -691,6 +665,15 @@ Solution solve(ProblemData& problem) {
     auto time_limit = std::chrono::duration<double>(seconds);
     auto end_time= time_limit+start_time;
 
+    TOT_VILLAGES=problem.villages.size();
+    TOT_HELICOPTERS=problem.helicopters.size();
+    D_MAX=problem.d_max;
+    DRY_WT=problem.packages[0].weight;
+    DRY_VAL=problem.packages[0].value;
+    WET_WT=problem.packages[1].weight;
+    WET_VAL=problem.packages[1].value;
+    OTHER_WT=problem.packages[2].weight;
+    OTHER_VAL=problem.packages[2].value;
 
     cout << "Starting solver..." << endl;
     RESET_PROBLEM(problem);
@@ -707,28 +690,4 @@ Solution solve(ProblemData& problem) {
     return solution;
 }
 
-
-
-    // Get value/weight ratios from problem data
-    // double dry_food_ratio = problem.packages[0].value / problem.packages[0].weight;
-    // double perishable_ratio = problem.packages[1].value / problem.packages[1].weight;
-    // double other_ratio = problem.packages[2].value / problem.packages[2].weight;
-    // bool prefer_perishable = perishable_ratio > dry_food_ratio;
-    // double better_food_ratio = prefer_perishable ? perishable_ratio : dry_food_ratio;
-
-    // double best_increase = 0.0;
-    // if(!trip.drops.empty()){
-    //     // adding drop to the back of this current trip drops
-    //     int last_village_id = trip.drops.back().village_id;
-    //     int last_village_idx = last_village_id - 1;
-
-    //     for(int i=0;i<problem.villages.size();i++){
-    //         auto& new_village = problem.villages[i];
-
-    //         double dist_last_to_new = distance(problem.villages[last_village_idx].coords, new_village.coords);
-    //         double dist_new_to_home = distance(new_village.coords, problem.cities[helicopter.home_city_id-1]);
-    //         double dist_last_to_home = distance(problem.villages[last_village_idx].coords, problem.cities[helicopter.home_city_id-1]);
-    //         double distance_extension = dist_last_to_new + dist_new_to_home - dist_last_to_home;
-    //         if(trip.distance_covered + distance_extension > helicopter.distance_capacity -0.1){// 0.1 for being safe for precision error will change later accordingly
-    //             continue;
-    //         } 
+ 
