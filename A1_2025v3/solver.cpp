@@ -34,10 +34,6 @@ struct ExtResult {
 int TOT_VILLAGES,TOT_HELICOPTERS,D_MAX;
 int DRY_WT,WET_WT,OTHER_WT;
 int DRY_VAL,WET_VAL,OTHER_VAL;
-    // Calculate value/weight ratios
-double DRY_RATIO = DRY_VAL / DRY_WT;
-double WET_RATIO = WET_VAL / WET_WT;
-double OTHER_RATIO = OTHER_VAL / OTHER_WT;
 
 
 double EVALUATE_VALUE(const ProblemData& problem, const Solution& solution){
@@ -55,9 +51,9 @@ double EVALUATE_VALUE(const ProblemData& problem, const Solution& solution){
                 const Village* village_ptr = &problem.villages[drop.village_id-1];
                 if (!village_ptr) continue; // Invalid village ID, skip
                 
-                total_value += drop.dry_food * DRY_VAL;
-                total_value += drop.perishable_food * WET_VAL;
-                total_value += drop.other_supplies * OTHER_VAL;
+                total_value += drop.dry_food * problem.packages[0].value;
+                total_value += drop.perishable_food * problem.packages[1].value;
+                total_value += drop.other_supplies * problem.packages[2].value;
             }
             // Calculate cost from distance
             total_cost += heli_ptr->alpha * trip.distance_covered + heli_ptr->fixed_cost;
@@ -256,15 +252,25 @@ ExtResult evaluate_extension(const Trip& trip, const Helicopter& helicopter,
     }
     
     // Get package weights and values
-     
-
-
+    double dry_weight = problem.packages[0].weight;
+    double perishable_weight = problem.packages[1].weight;
+    double other_weight = problem.packages[2].weight;
+    
+    double dry_value = problem.packages[0].value;
+    double perishable_value = problem.packages[1].value;
+    double other_value = problem.packages[2].value;
+    
+    // Calculate value/weight ratios
+    double dry_ratio = dry_value / dry_weight;
+    double perishable_ratio = perishable_value / perishable_weight;
+    double other_ratio = other_value / other_weight;
+    
     // Calculate expected food ratio based on weight percentage
-    double expected_food_ratio = food_percentage * DRY_RATIO + (1.0 - food_percentage) * WET_RATIO;
-
+    double expected_food_ratio = food_percentage * dry_ratio + (1.0 - food_percentage) * perishable_ratio;
+    
     // Prioritize food if it has better or equal value/weight ratio
-    bool prioritize_food = expected_food_ratio >= OTHER_RATIO;
-
+    bool prioritize_food = expected_food_ratio >= other_ratio;
+    
     // Initialize drop
     Drop new_drop;
     new_drop.village_id = new_village.id;
@@ -288,16 +294,16 @@ ExtResult evaluate_extension(const Trip& trip, const Helicopter& helicopter,
         double target_perishable_weight = available_weight * (1.0 - food_percentage);
         
         // Calculate packet counts based on weight targets
-        int dry_packets = (int)(target_dry_weight / DRY_WT);
-        int perishable_packets = (int)(target_perishable_weight / WET_WT);
-
+        int dry_packets = (int)(target_dry_weight / dry_weight);
+        int perishable_packets = (int)(target_perishable_weight / perishable_weight);
+        
         // Constrain by village needs
         dry_packets = min(dry_packets, temp_food_needed);
         perishable_packets = min(perishable_packets, temp_food_needed - dry_packets);
         
         // Calculate actual weights
-        double actual_dry_weight = dry_packets * DRY_WT;
-        double actual_perishable_weight = perishable_packets * WET_WT;
+        double actual_dry_weight = dry_packets * dry_weight;
+        double actual_perishable_weight = perishable_packets * perishable_weight;
         double total_food_weight = actual_dry_weight + actual_perishable_weight;
         
         // Check if it fits in available weight
@@ -306,23 +312,23 @@ ExtResult evaluate_extension(const Trip& trip, const Helicopter& helicopter,
             new_drop.perishable_food = perishable_packets;
             
             weight_to_drop += total_food_weight;
-            value_gained += dry_packets * DRY_VAL + perishable_packets * WET_VAL;
-
+            value_gained += dry_packets * dry_value + perishable_packets * perishable_value;
+            
             temp_food_needed -= (dry_packets + perishable_packets);
             available_weight -= total_food_weight;
         }
     }
     
     // Allocate other supplies with remaining capacity
-    if (temp_other_needed > 0 && available_weight >= OTHER_WT) {
-        int other_packets = min(temp_other_needed, (int)(available_weight / OTHER_WT));
-
+    if (temp_other_needed > 0 && available_weight >= other_weight) {
+        int other_packets = min(temp_other_needed, (int)(available_weight / other_weight));
+        
         if (other_packets > 0) {
             new_drop.other_supplies = other_packets;
-            double actual_other_weight = other_packets * OTHER_WT;
-
+            double actual_other_weight = other_packets * other_weight;
+            
             weight_to_drop += actual_other_weight;
-            value_gained += other_packets * OTHER_VAL;
+            value_gained += other_packets * other_value;
             available_weight -= actual_other_weight;
         }
     }
@@ -332,19 +338,19 @@ ExtResult evaluate_extension(const Trip& trip, const Helicopter& helicopter,
         // Use remaining weight for food with same percentage split
         double remaining_dry_weight = available_weight * food_percentage;
         double remaining_perishable_weight = available_weight * (1.0 - food_percentage);
-
-        int additional_dry = min(temp_food_needed, (int)(remaining_dry_weight / DRY_WT));
-        int additional_perishable = min(temp_food_needed - additional_dry,
-                                         (int)(remaining_perishable_weight / WET_WT));
-
-        double additional_weight = additional_dry * DRY_WT + additional_perishable * WET_WT;
-
+        
+        int additional_dry = min(temp_food_needed, (int)(remaining_dry_weight / dry_weight));
+        int additional_perishable = min(temp_food_needed - additional_dry, 
+                                       (int)(remaining_perishable_weight / perishable_weight));
+        
+        double additional_weight = additional_dry * dry_weight + additional_perishable * perishable_weight;
+        
         if (additional_weight <= available_weight && (additional_dry > 0 || additional_perishable > 0)) {
             new_drop.dry_food += additional_dry;
             new_drop.perishable_food += additional_perishable;
             
             weight_to_drop += additional_weight;
-            value_gained += additional_dry * DRY_VAL + additional_perishable * WET_VAL;
+            value_gained += additional_dry * dry_value + additional_perishable * perishable_value;
         }
     }
     
@@ -584,7 +590,11 @@ Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem,
         } 
         RESET_PROBLEM(problem);
         Solution current_solution;
-        current_solution = GET_RANDOM_STATE(problem,restarts,ratio_list,is_empty_peak);
+        if(is_empty_peak){
+            current_solution = GET_RANDOM_STATE(problem,restarts,ratio_list,true);
+        }else{
+            current_solution = GET_RANDOM_STATE(problem,restarts,ratio_list,false);
+        }
         current_value = EVALUATE_VALUE(problem, current_solution);
         int a=(250*int(problem.villages.size()+ problem.helicopters.size()));
         int local_iterations = a;
@@ -601,7 +611,6 @@ Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem,
                 best_ratio_list = ratio_list;
                 local_iterations = a; // Reset local iterations on improvement
             }
-
         }
 
         // BOOSTER_FUNCTION(best_solution, problem);
@@ -613,8 +622,11 @@ Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem,
         //         best_solution = current_solution;
         //         best_ratio_list = ratio_list;
         //     }
-        UPDATE_RANDOM_STATS(problem, best_solution); 
-        if(best_value==0 && restarts>TOT_HELICOPTERS){
+        if(restarts==1){
+            // getting the random soultion constarins for each helicopter
+            UPDATE_RANDOM_STATS(problem, current_solution);
+        }
+        if(best_value==0){
             // still best is zero mean zero state is the best state..
             // lets try i will try again with randowm assigning near villages
             is_empty_peak = true;
