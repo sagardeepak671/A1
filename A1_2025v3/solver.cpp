@@ -51,9 +51,9 @@ double EVALUATE_VALUE(const ProblemData& problem, const Solution& solution){
                 const Village* village_ptr = &problem.villages[drop.village_id-1];
                 if (!village_ptr) continue; // Invalid village ID, skip
                 
-                total_value += drop.dry_food * problem.packages[0].value;
-                total_value += drop.perishable_food * problem.packages[1].value;
-                total_value += drop.other_supplies * problem.packages[2].value;
+                total_value += drop.dry_food * DRY_VAL;
+                total_value += drop.perishable_food * WET_VAL;
+                total_value += drop.other_supplies * OTHER_VAL;
             }
             // Calculate cost from distance
             total_cost += heli_ptr->alpha * trip.distance_covered + heli_ptr->fixed_cost;
@@ -75,13 +75,13 @@ std::vector<int> solveSimpleTSP(const std::vector<int>& village_ids, const Probl
     visited[current_idx] = true;
     
     // Nearest neighbor heuristic
-    for (int step = 1; step < village_ids.size(); step++) {
+    for (int step = 1; step < (int)village_ids.size(); step++) {
         double min_dist = std::numeric_limits<double>::max();
         int next_idx = -1;
         
         Point current_pos = problem.villages[village_ids[current_idx] - 1].coords;
         
-        for (int i = 0; i < village_ids.size(); i++) {
+        for (int i = 0; i < (int)village_ids.size(); i++) {
             if (!visited[i]) {
                 Point candidate_pos = problem.villages[village_ids[i] - 1].coords;
                 double dist = distance(current_pos, candidate_pos);
@@ -251,19 +251,11 @@ ExtResult evaluate_extension(const Trip& trip, const Helicopter& helicopter,
         return ExtResult({-1, 0, 0, 0}, -1e9, 0.0);
     }
     
-    // Get package weights and values
-    double dry_weight = problem.packages[0].weight;
-    double perishable_weight = problem.packages[1].weight;
-    double other_weight = problem.packages[2].weight;
-    
-    double dry_value = problem.packages[0].value;
-    double perishable_value = problem.packages[1].value;
-    double other_value = problem.packages[2].value;
-    
+    // Get package weights and values 
     // Calculate value/weight ratios
-    double dry_ratio = dry_value / dry_weight;
-    double perishable_ratio = perishable_value / perishable_weight;
-    double other_ratio = other_value / other_weight;
+    double dry_ratio = DRY_VAL / DRY_WT;
+    double perishable_ratio = WET_VAL / WET_WT;
+    double other_ratio = OTHER_VAL / OTHER_WT;
     
     // Calculate expected food ratio based on weight percentage
     double expected_food_ratio = food_percentage * dry_ratio + (1.0 - food_percentage) * perishable_ratio;
@@ -294,16 +286,16 @@ ExtResult evaluate_extension(const Trip& trip, const Helicopter& helicopter,
         double target_perishable_weight = available_weight * (1.0 - food_percentage);
         
         // Calculate packet counts based on weight targets
-        int dry_packets = (int)(target_dry_weight / dry_weight);
-        int perishable_packets = (int)(target_perishable_weight / perishable_weight);
+        int dry_packets = (int)(target_dry_weight / DRY_WT);
+        int perishable_packets = (int)(target_perishable_weight / WET_WT);
         
         // Constrain by village needs
         dry_packets = min(dry_packets, temp_food_needed);
         perishable_packets = min(perishable_packets, temp_food_needed - dry_packets);
         
         // Calculate actual weights
-        double actual_dry_weight = dry_packets * dry_weight;
-        double actual_perishable_weight = perishable_packets * perishable_weight;
+        double actual_dry_weight = dry_packets * DRY_WT;
+        double actual_perishable_weight = perishable_packets * WET_WT;
         double total_food_weight = actual_dry_weight + actual_perishable_weight;
         
         // Check if it fits in available weight
@@ -312,7 +304,7 @@ ExtResult evaluate_extension(const Trip& trip, const Helicopter& helicopter,
             new_drop.perishable_food = perishable_packets;
             
             weight_to_drop += total_food_weight;
-            value_gained += dry_packets * dry_value + perishable_packets * perishable_value;
+            value_gained += dry_packets * DRY_VAL + perishable_packets * WET_VAL;
             
             temp_food_needed -= (dry_packets + perishable_packets);
             available_weight -= total_food_weight;
@@ -320,15 +312,15 @@ ExtResult evaluate_extension(const Trip& trip, const Helicopter& helicopter,
     }
     
     // Allocate other supplies with remaining capacity
-    if (temp_other_needed > 0 && available_weight >= other_weight) {
-        int other_packets = min(temp_other_needed, (int)(available_weight / other_weight));
+    if (temp_other_needed > 0 && available_weight >= OTHER_WT) {
+        int other_packets = min(temp_other_needed, (int)(available_weight / OTHER_WT));
         
         if (other_packets > 0) {
             new_drop.other_supplies = other_packets;
-            double actual_other_weight = other_packets * other_weight;
+            double actual_other_weight = other_packets * OTHER_WT;
             
             weight_to_drop += actual_other_weight;
-            value_gained += other_packets * other_value;
+            value_gained += other_packets * OTHER_VAL;
             available_weight -= actual_other_weight;
         }
     }
@@ -339,18 +331,18 @@ ExtResult evaluate_extension(const Trip& trip, const Helicopter& helicopter,
         double remaining_dry_weight = available_weight * food_percentage;
         double remaining_perishable_weight = available_weight * (1.0 - food_percentage);
         
-        int additional_dry = min(temp_food_needed, (int)(remaining_dry_weight / dry_weight));
+        int additional_dry = min(temp_food_needed, (int)(remaining_dry_weight / DRY_WT));
         int additional_perishable = min(temp_food_needed - additional_dry, 
-                                       (int)(remaining_perishable_weight / perishable_weight));
+                                       (int)(remaining_perishable_weight / WET_WT));
         
-        double additional_weight = additional_dry * dry_weight + additional_perishable * perishable_weight;
+        double additional_weight = additional_dry * DRY_WT + additional_perishable * WET_WT;
         
         if (additional_weight <= available_weight && (additional_dry > 0 || additional_perishable > 0)) {
             new_drop.dry_food += additional_dry;
             new_drop.perishable_food += additional_perishable;
             
             weight_to_drop += additional_weight;
-            value_gained += additional_dry * dry_value + additional_perishable * perishable_value;
+            value_gained += additional_dry * DRY_VAL + additional_perishable * WET_VAL;
         }
     }
     
@@ -506,18 +498,16 @@ Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem,
     std::vector<double> ratio_list(helios,1.0), old_ratio_list(helios,1.0);
     std::vector<double> best_ratio_list(helios, 0.0);
     int restarts = 1;
-    bool improved=false;
-    double Temperature;
-    double Vmax;
-    double Vmin;
-    double delV;
-    double current_value;
+    bool improved=false; 
+    double Vmax = 0.0;
+    double Vmin = 0.0;
+    double delV = 0.0;
+    double current_value = 0.0;
     std::chrono::high_resolution_clock::time_point end_time2 = std::chrono::time_point_cast<std::chrono::high_resolution_clock::duration>(end_time);
     
     bool is_empty_peak = false;
     while (std::chrono::high_resolution_clock::now() < end_time){ //
-        // cout<<restarts;
-        
+        // cout<<restarts; 
         
         if (!improved){
 

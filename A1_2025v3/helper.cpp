@@ -19,7 +19,7 @@ void RANDOM1(Solution& solution, ProblemData& problem, int heli_index, double fo
     // so i need total these many villages in total i will select randomly from the villages needed and add them to the trips
     // i will select the total_villages_needed the near ones
     vector<int> elected_villages;
-    for(int i=0;i<problem.villages.size();i++){
+    for(int i=0;i<(int)problem.villages.size();i++){
         if(problem.villages[i].food_needed>0 || problem.villages[i].other_supplies_needed>0){
             elected_villages.push_back(i);
         }
@@ -46,7 +46,7 @@ void RANDOM1(Solution& solution, ProblemData& problem, int heli_index, double fo
     int actual_trips = std::max(1, std::min(2, (int)(RAND_INIT_STATS[heli_index].num_trips * 0.5))); // 50% of planned trips, max 2
     double HELI_TOTO_TRACK = 0.0; // Track total distance for this helicopter
     
-    for(int t = 0; t < actual_trips && current_village_index < elected_villages.size() && HELI_TOTO_TRACK < problem.d_max *0.999; t++){
+    for(int t = 0; t < actual_trips && current_village_index < (int)elected_villages.size() && HELI_TOTO_TRACK < problem.d_max *0.999; t++){
         Trip trip;
         trip.dry_food_pickup = 0;
         trip.perishable_food_pickup = 0;
@@ -57,7 +57,7 @@ void RANDOM1(Solution& solution, ProblemData& problem, int heli_index, double fo
         Point current_pos = home_city;
         int drops_for_this_trip = (int)(RAND_INIT_STATS[heli_index].num_drops_per_trip[t] * 0.5);
 
-        for(int d = 0; d < drops_for_this_trip && current_village_index < elected_villages.size(); d++){
+        for(int d = 0; d < drops_for_this_trip && current_village_index < (int)elected_villages.size(); d++){
             int curr_village_id = elected_villages[current_village_index];
             current_village_index++;
             
@@ -265,7 +265,7 @@ void RANDOM_NEARBY_VILLAGE(Solution& solution, ProblemData& problem, vector<doub
     auto& trip = heli_plan.trips[trip_index];
     // adding a random nearby village
     vector<int> elected_villages;
-    for(int i=0;i<problem.villages.size();i++){
+    for(int i=0;i<(int)problem.villages.size();i++){
         if(problem.villages[i].food_needed>0 || problem.villages[i].other_supplies_needed>0){
             elected_villages.push_back(i);
         }
@@ -412,7 +412,7 @@ void RANDOM_NEARBY_VILLAGE(Solution& solution, ProblemData& problem, vector<doub
 
 Solution GET_RANDOM_STATE(ProblemData& problem, int restart_counter, const std::vector<double>& ratio_arr, bool random_near_village){
     Solution solution;
-    for(int i=0;i<problem.helicopters.size();i++){
+    for(int i=0;i<(int)problem.helicopters.size();i++){
         HelicopterPlan heli_plan;
         heli_plan.helicopter_id = problem.helicopters[i].id;
         Trip empty_trip;
@@ -430,7 +430,7 @@ Solution GET_RANDOM_STATE(ProblemData& problem, int restart_counter, const std::
         RANDOM_NEARBY_VILLAGE(solution, problem, ratio_arr); 
         return solution; 
     } 
-    for(int h =0;h<problem.helicopters.size();h++){
+    for(int h =0;h<(int)problem.helicopters.size();h++){
         // Get the distribution ratio for this helicopter from ratio_arr
         double food_percentage = ratio_arr[h];
         RANDOM1(solution, problem, h, food_percentage); 
@@ -449,7 +449,7 @@ void RESET_PROBLEM(ProblemData& problem){
 }
 
 void UPDATE_RANDOM_STATS(ProblemData& problem, Solution& solution){
-    for(int h =0;h<problem.helicopters.size();h++){
+    for(int h =0;h<(int)problem.helicopters.size();h++){
         auto& heli_plan = solution[h];
         RAND_INIT_STATS[h].num_trips = std::max(1, (int)(heli_plan.trips.size()));
 
@@ -469,7 +469,7 @@ bool IS_FEASIBLE(const Solution& solution, const ProblemData& problem) {
     
     for (const auto& heli_plan : solution) {
         int heli_id = heli_plan.helicopter_id;
-        if (heli_id <= 0 || heli_id > problem.helicopters.size()) {
+        if (heli_id <= 0 || heli_id > (int)problem.helicopters.size()) {
             is_feasible = false;
             continue;
         }
@@ -492,7 +492,7 @@ bool IS_FEASIBLE(const Solution& solution, const ProblemData& problem) {
             int total_d = 0, total_p = 0, total_o = 0;
             
             for (const auto& drop : trip.drops) {
-                if (drop.village_id <= 0 || drop.village_id > problem.villages.size()) {
+                if (drop.village_id <= 0 || drop.village_id > (int)problem.villages.size()) {
                     is_feasible = false;
                     continue;
                 }
