@@ -76,13 +76,13 @@ std::vector<int> solveSimpleTSP(const std::vector<int>& village_ids, const Probl
     visited[current_idx] = true;
     
     // Nearest neighbor heuristic
-    for (int step = 1; step < village_ids.size(); step++) {
+    for (int step = 1; step < (int)village_ids.size(); step++) {
         double min_dist = std::numeric_limits<double>::max();
         int next_idx = -1;
         
         Point current_pos = problem.villages[village_ids[current_idx] - 1].coords;
         
-        for (int i = 0; i < village_ids.size(); i++) {
+        for (int i = 0; i < (int)village_ids.size(); i++) {
             if (!visited[i]) {
                 Point candidate_pos = problem.villages[village_ids[i] - 1].coords;
                 double dist = distance(current_pos, candidate_pos);
@@ -512,12 +512,11 @@ Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem,
     std::vector<double> ratio_list(helios,1.0), old_ratio_list(helios,1.0);
     std::vector<double> best_ratio_list(helios, 0.0);
     int restarts = 1;
-    bool improved=false;
-    double Temperature;
+    bool improved=false; 
     double Vmax;
     double Vmin;
-    double delV;
-    double current_value;
+    double delV=1e9;
+    double current_value=-1e18;
     std::chrono::high_resolution_clock::time_point end_time2 = std::chrono::time_point_cast<std::chrono::high_resolution_clock::duration>(end_time);
     
     bool is_empty_peak = false;
@@ -597,7 +596,7 @@ Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem,
         RESET_PROBLEM(problem);
         Solution current_solution;
 
-        current_solution = GET_RANDOM_STATE(problem,1,ratio_list,is_empty_peak);
+        current_solution = GET_RANDOM_STATE(problem,restarts,ratio_list,is_empty_peak);
 
         current_value = EVALUATE_VALUE(problem, current_solution);
         int a=(250*int(problem.villages.size()+ problem.helicopters.size()));
