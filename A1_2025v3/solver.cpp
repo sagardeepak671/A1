@@ -539,6 +539,8 @@ Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem,
     double delV;
     double current_value;
     std::chrono::high_resolution_clock::time_point end_time2 = std::chrono::time_point_cast<std::chrono::high_resolution_clock::duration>(end_time);
+    
+    bool is_empty_peak = false;
     while (std::chrono::high_resolution_clock::now() < end_time){ //
         // cout<<restarts;
         
@@ -613,7 +615,12 @@ Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem,
             ratio_list[rat_index]=new_ratio;
         } 
         RESET_PROBLEM(problem);
-        Solution current_solution = GET_RANDOM_STATE(problem,1);
+        Solution current_solution;
+        if(is_empty_peak){
+            current_solution = GET_RANDOM_STATE(problem,restarts,ratio_list,true);
+        }else{
+            current_solution = GET_RANDOM_STATE(problem,restarts,ratio_list,false);
+        }
         current_value = EVALUATE_VALUE(problem, current_solution);
         int a=(250*int(problem.villages.size()+ problem.helicopters.size()));
         int local_iterations = a;
@@ -644,6 +651,11 @@ Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem,
         if(restarts==1){
             // getting the random soultion constarins for each helicopter
             UPDATE_RANDOM_STATS(problem, current_solution);
+        }
+        if(best_value==0){
+            // still best is zero mean zero state is the best state..
+            // lets try i will try again with randowm assigning near villages
+            is_empty_peak = true;
         }
         cout<<best_value<<": ";
         for (auto&e:best_ratio_list){

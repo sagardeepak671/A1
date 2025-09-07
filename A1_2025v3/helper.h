@@ -32,8 +32,7 @@ void RANDOM2(Solution& solution, ProblemData& problem, int heli_index);
 /**
  * @brief Gets a random initial state for the problem
  */
-Solution GET_RANDOM_STATE(ProblemData& problem, int restart_counter);
-
+Solution GET_RANDOM_STATE(ProblemData& problem, int restart_counter, const std::vector<double>& ratio_arr, bool random_near_village);
 /**
  * @brief Updates random statistics based on current solution
  */
