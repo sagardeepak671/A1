@@ -6,6 +6,7 @@
 #include <map>
 #include <algorithm>
 #include <random>
+#include <unordered_set>
 
 std::random_device rd;
 std::mt19937 gen(rd()); // Mersenne Twister engine
@@ -111,6 +112,7 @@ std::vector<int> solveChristofidesTSP(const std::vector<int>& village_ids, const
 }
 
 void BOOSTER_FUNCTION(Solution& solution, ProblemData& problem) {
+
     for (auto& heli_plan : solution) {
         for (auto& trip : heli_plan.trips) {
             
@@ -120,42 +122,42 @@ void BOOSTER_FUNCTION(Solution& solution, ProblemData& problem) {
             // **PHASE 1: Route Optimization using TSP**
             
             // Extract village IDs from drops
-            std::vector<int> village_ids;
-            for (const auto& drop : trip.drops) {
-                village_ids.push_back(drop.village_id);
-            }
+            // std::vector<int> village_ids;
+            // for (const auto& drop : trip.drops) {
+            //     village_ids.push_back(drop.village_id);
+            // }
             
-            // Get optimized route using TSP solver
-            std::vector<int> optimized_route = solveChristofidesTSP(village_ids, problem);
+            // // Get optimized route using TSP solver
+            // std::vector<int> optimized_route = solveChristofidesTSP(village_ids, problem);
             
-            // Reorder drops according to optimized route
-            std::vector<Drop> reordered_drops;
-            for (int village_id : optimized_route) {
-                auto it = std::find_if(trip.drops.begin(), trip.drops.end(),
-                                     [&](const Drop& d) { return d.village_id == village_id; });
-                if (it != trip.drops.end()) {
-                    reordered_drops.push_back(*it);
-                }
-            }
-            trip.drops = reordered_drops;
+            // // Reorder drops according to optimized route
+            // std::vector<Drop> reordered_drops;
+            // for (int village_id : optimized_route) {
+            //     auto it = std::find_if(trip.drops.begin(), trip.drops.end(),
+            //                          [&](const Drop& d) { return d.village_id == village_id; });
+            //     if (it != trip.drops.end()) {
+            //         reordered_drops.push_back(*it);
+            //     }
+            // }
+            // trip.drops = reordered_drops;
             
-            // Recalculate trip distance based on optimized route
-            const Helicopter& helicopter = problem.helicopters[heli_plan.helicopter_id - 1];
-            Point home_city = problem.cities[helicopter.home_city_id - 1];
-            Point current_pos = home_city;
-            double total_distance = 0.0;
+            // // Recalculate trip distance based on optimized route
+            // const Helicopter& helicopter = problem.helicopters[heli_plan.helicopter_id - 1];
+            // Point home_city = problem.cities[helicopter.home_city_id - 1];
+            // Point current_pos = home_city;
+            // double total_distance = 0.0;
             
-            for (const auto& drop : trip.drops) {
-                const Village& village = problem.villages[drop.village_id - 1];
-                total_distance += distance(current_pos, village.coords);
-                current_pos = village.coords;
-            }
-            total_distance += distance(current_pos, home_city);  // Return to home
+            // for (const auto& drop : trip.drops) {
+            //     const Village& village = problem.villages[drop.village_id - 1];
+            //     total_distance += distance(current_pos, village.coords);
+            //     current_pos = village.coords;
+            // }
+            // total_distance += distance(current_pos, home_city);  // Return to home
             
-            // Update helicopter's total distance
-            double old_distance = trip.distance_covered;
-            trip.distance_covered = total_distance;
-            const_cast<Helicopter&>(helicopter).total_distance_covered += (total_distance - old_distance);
+            // // Update helicopter's total distance
+            // double old_distance = trip.distance_covered;
+            // trip.distance_covered = total_distance;
+            // const_cast<Helicopter&>(helicopter).total_distance_covered += (total_distance - old_distance);
             
             // **PHASE 2: Convert Perishable to Dry Food**
             
@@ -171,13 +173,16 @@ void BOOSTER_FUNCTION(Solution& solution, ProblemData& problem) {
                     
                     // How many dry packets can we get by removing 1 perishable packet?
                     int dry_packets_gained = static_cast<int>(perishable_weight / dry_weight);
-                    
+                    // cout<<drop.village_id<<" : "<<problem.villages[drop.village_id - 1].food_needed<<endl;
                     // Only convert if we gain more dry packets than we lose perishable packets
                     if (dry_packets_gained > 1) {
                         // Limit by village need
-                        int actual_dry_to_add = std::min(dry_packets_gained, problem.villages[drop.village_id - 1].food_needed);
+                        int actual_dry_to_add = min(dry_packets_gained, problem.villages[drop.village_id - 1].food_needed);
                         
                         // Make the conversion: remove 1 perishable, add multiple dry
+                        if (WET_VAL>DRY_VAL*actual_dry_to_add){
+                            break;
+                        }
                         drop.perishable_food -= 1;
                         drop.dry_food += actual_dry_to_add;
                         
@@ -186,7 +191,7 @@ void BOOSTER_FUNCTION(Solution& solution, ProblemData& problem) {
                         trip.dry_food_pickup += actual_dry_to_add;
                         
                         // Update village needs
-                        problem.villages[drop.village_id - 1].food_needed -= (actual_dry_to_add);
+                        problem.villages[drop.village_id - 1].food_needed -= (actual_dry_to_add-1);
                         
                         // Update weight (trip gets lighter since dry is lighter)
                         trip.weight_carried -= perishable_weight;
@@ -378,15 +383,16 @@ bool find_best_extension(Trip& current_trip, Helicopter& helicopter,
     int best_village_id = -1;
     ExtResult best_result = ExtResult({-1, 0, 0, 0}, 0.0, 0.0);
     
+    unordered_set<int> temp;
+    for (const auto& drop : current_trip.drops) {
+        temp.insert(drop.village_id);    
+    } 
     // Evaluate all villages
     for (const auto& village : problem.villages) {
         // Skip if already visited in this trip
         bool already_visited = false;
-        for (const auto& drop : current_trip.drops) {
-            if (drop.village_id == village.id) {
-                already_visited = true;
-                break;
-            }
+        if (temp.find(village.id)!=temp.end()){
+            already_visited=true;
         }
         if (already_visited) continue;
         
@@ -403,7 +409,7 @@ bool find_best_extension(Trip& current_trip, Helicopter& helicopter,
             best_result=result;
         }
     }
-    int ret=false;
+    bool ret=false;
     if (best_village_id == -1) {
         return ret; // No valid extension found
     }
@@ -591,9 +597,9 @@ Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem,
         RESET_PROBLEM(problem);
         Solution current_solution;
         if(is_empty_peak){
-            current_solution = GET_RANDOM_STATE(problem,restarts,ratio_list,true);
+            current_solution = GET_RANDOM_STATE(problem,1,ratio_list,true);
         }else{
-            current_solution = GET_RANDOM_STATE(problem,restarts,ratio_list,false);
+            current_solution = GET_RANDOM_STATE(problem,1,ratio_list,false);
         }
         current_value = EVALUATE_VALUE(problem, current_solution);
         int a=(250*int(problem.villages.size()+ problem.helicopters.size()));
@@ -613,34 +619,25 @@ Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem,
             }
         }
 
-        // BOOSTER_FUNCTION(best_solution, problem);
-        // current_value = EVALUATE_VALUE(problem, current_solution);
-        //     if (current_value > best_value) {
-                
-        //         best_value = current_value;
-        //         improved=true;
-        //         best_solution = current_solution;
-        //         best_ratio_list = ratio_list;
-        //     }
         if(restarts==1){
             // getting the random soultion constarins for each helicopter
             UPDATE_RANDOM_STATS(problem, current_solution);
         }
-        if(best_value==0){
+        if(best_value==0 && restarts>TOT_HELICOPTERS){
             // still best is zero mean zero state is the best state..
             // lets try i will try again with randowm assigning near villages
             is_empty_peak = true;
         }
+        
+        restarts++;
         cout<<best_value<<": ";
         for (auto&e:best_ratio_list){
             cout << e << " "; 
         }
         cout<<"\n";
-        restarts++;
+        // if (restarts==11) break;
     }
-    // for (auto&e:best_ratio_list){
-    // cout << e << "\n"; 
-    // }
+
     // Remove empty trips from the solution
     for (auto& heli_plan : best_solution) {
         heli_plan.trips.erase(
@@ -655,7 +652,11 @@ Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem,
             heli_plan.trips.end()
         );
     }
-
+    cout<<"PreBoost: "<<EVALUATE_VALUE(problem, best_solution)<<"\n";
+    RESET_PROBLEM_WITH_THIS_SOLUTION(best_solution, problem);
+    BOOSTER_FUNCTION(best_solution, problem);
+    cout<<"AfterBoost: "<<EVALUATE_VALUE(problem, best_solution)<<"\n";
+    
     return best_solution;
 }
 

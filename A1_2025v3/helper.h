@@ -37,6 +37,7 @@ Solution GET_RANDOM_STATE(ProblemData& problem, int restart_counter, const std::
  * @brief Updates random statistics based on current solution
  */
 void UPDATE_RANDOM_STATS(ProblemData& problem, Solution& solution);
+void RESET_PROBLEM_WITH_THIS_SOLUTION(Solution& solution, ProblemData& problem);
 
 /**
  * @brief Resets problem to initial state
