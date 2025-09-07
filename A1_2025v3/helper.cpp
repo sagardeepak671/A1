@@ -269,7 +269,7 @@ void RANDOM_NEARBY_VILLAGE(Solution& solution, ProblemData& problem, vector<doub
     auto& trip = heli_plan.trips[trip_index];
     // adding a random nearby village
     vector<int> elected_villages;
-    for(int i=0;i<(int)problem.villages.size();i++){
+    for(int i=0;i<int(problem.villages.size());i++){
         if(problem.villages[i].food_needed>0 || problem.villages[i].other_supplies_needed>0){
             elected_villages.push_back(i);
         }

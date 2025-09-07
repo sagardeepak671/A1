@@ -64,52 +64,52 @@ double EVALUATE_VALUE(const ProblemData& problem, const Solution& solution){
 }
 
 //BOOOOOOOOOOOOOOOOOOSTERRRRRRRRRRRRRR
-std::vector<int> solveSimpleTSP(const std::vector<int>& village_ids, const ProblemData& problem) {
-    if (village_ids.size() <= 1) return village_ids;
+// std::vector<int> solveSimpleTSP(const std::vector<int>& village_ids, const ProblemData& problem) {
+//     if (village_ids.size() <= 1) return village_ids;
     
-    std::vector<int> tour;
-    std::vector<bool> visited(village_ids.size(), false);
+//     std::vector<int> tour;
+//     std::vector<bool> visited(village_ids.size(), false);
     
-    // Start from first village
-    int current_idx = 0;
-    tour.push_back(village_ids[current_idx]);
-    visited[current_idx] = true;
+//     // Start from first village
+//     int current_idx = 0;
+//     tour.push_back(village_ids[current_idx]);
+//     visited[current_idx] = true;
     
-    // Nearest neighbor heuristic
-    for (int step = 1; step < (int)village_ids.size(); step++) {
-        double min_dist = std::numeric_limits<double>::max();
-        int next_idx = -1;
+//     // Nearest neighbor heuristic
+//     for (int step = 1; step < (int)village_ids.size(); step++) {
+//         double min_dist = std::numeric_limits<double>::max();
+//         int next_idx = -1;
         
-        Point current_pos = problem.villages[village_ids[current_idx] - 1].coords;
+//         Point current_pos = problem.villages[village_ids[current_idx] - 1].coords;
         
-        for (int i = 0; i < (int)village_ids.size(); i++) {
-            if (!visited[i]) {
-                Point candidate_pos = problem.villages[village_ids[i] - 1].coords;
-                double dist = distance(current_pos, candidate_pos);
+//         for (int i = 0; i < (int)village_ids.size(); i++) {
+//             if (!visited[i]) {
+//                 Point candidate_pos = problem.villages[village_ids[i] - 1].coords;
+//                 double dist = distance(current_pos, candidate_pos);
                 
-                if (dist < min_dist) {
-                    min_dist = dist;
-                    next_idx = i;
-                }
-            }
-        }
+//                 if (dist < min_dist) {
+//                     min_dist = dist;
+//                     next_idx = i;
+//                 }
+//             }
+//         }
         
-        if (next_idx != -1) {
-            tour.push_back(village_ids[next_idx]);
-            visited[next_idx] = true;
-            current_idx = next_idx;
-        }
-    }
+//         if (next_idx != -1) {
+//             tour.push_back(village_ids[next_idx]);
+//             visited[next_idx] = true;
+//             current_idx = next_idx;
+//         }
+//     }
     
-    return tour;
-}
+//     return tour;
+// }
 
-// Advanced TSP solver placeholder (replace with Christofides implementation)
-std::vector<int> solveChristofidesTSP(const std::vector<int>& village_ids, const ProblemData& problem) {
-    // TODO: Implement Christofides algorithm here
-    // For now, use simple nearest neighbor
-    return solveSimpleTSP(village_ids, problem);
-}
+// // Advanced TSP solver placeholder (replace with Christofides implementation)
+// std::vector<int> solveChristofidesTSP(const std::vector<int>& village_ids, const ProblemData& problem) {
+//     // TODO: Implement Christofides algorithm here
+//     // For now, use simple nearest neighbor
+//     return solveSimpleTSP(village_ids, problem);
+// }
 
 void BOOSTER_FUNCTION(Solution& solution, ProblemData& problem) {
 
@@ -499,7 +499,7 @@ Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem,
     std::chrono::time_point<std::chrono::high_resolution_clock, std::chrono::duration<double>> end_time)
 {
     Solution best_solution;
-    double best_value = -1e18;
+    double best_value = 0.0;
     const int helios=problem.helicopters.size();
     std::vector<double> ratio_list(helios,1.0), old_ratio_list(helios,1.0);
     std::vector<double> best_ratio_list(helios, 0.0);
@@ -588,7 +588,7 @@ Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem,
         Solution current_solution;
         current_solution = GET_RANDOM_STATE(problem,restarts,ratio_list,is_empty_peak);
 
-        current_value = EVALUATE_VALUE(problem, current_solution);
+        // current_value = EVALUATE_VALUE(problem, current_solution);
         int a=(250*int(problem.villages.size()+ problem.helicopters.size()));
         int local_iterations = a;
         improved=false;
@@ -619,18 +619,18 @@ Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem,
         // if(restarts==1){
         //     // getting the random soultion constarins for each helicopter
         // }
-        if(best_value==0){
+        if(best_value==0 && restarts>TOT_HELICOPTERS){
             // still best is zero mean zero state is the best state..
             // lets try i will try again with randowm assigning near villages
             is_empty_peak = true;
         }
         
         restarts++;
-        cout<<best_value<<": ";
-        for (auto&e:best_ratio_list){
-            cout << e << " "; 
-        }
-        cout<<"\n";
+        // cout<<best_value<<": ";
+        // for (auto&e:best_ratio_list){
+        //     cout << e << " "; 
+        // }
+        // cout<<"\n";
         // if (restarts==11) break;
     }
 
@@ -648,10 +648,10 @@ Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem,
             heli_plan.trips.end()
         );
     }
-    cout<<"PreBoost: "<<EVALUATE_VALUE(problem, best_solution)<<"\n";
+    // cout<<"PreBoost: "<<EVALUATE_VALUE(problem, best_solution)<<"\n";
     RESET_PROBLEM_WITH_THIS_SOLUTION(best_solution, problem);
     BOOSTER_FUNCTION(best_solution, problem);
-    cout<<"AfterBoost: "<<EVALUATE_VALUE(problem, best_solution)<<"\n";
+    // cout<<"AfterBoost: "<<EVALUATE_VALUE(problem, best_solution)<<"\n";
     
     return best_solution;
 }
