@@ -3,8 +3,9 @@
 #include <vector>
 #include <algorithm>
 #include <cstdlib>
-using namespace std;
-
+using namespace std; 
+#include <random>
+  
 
 // STATISTICS FOR THE RANDOM INITIALIZATION
 vector<random_stats> RAND_INIT_STATS;
@@ -38,7 +39,10 @@ void RANDOM1(Solution& solution, ProblemData& problem, int heli_index, double fo
     }
     
     // now randomly shuffling the elected villages 
-    random_shuffle(elected_villages.begin(),elected_villages.end());
+    std::random_device rd;
+    std::mt19937 g(rd());  
+
+    std::shuffle(elected_villages.begin(), elected_villages.end(), g);
     
     // now adding these villages to the trips with percentage allocation
     int current_village_index = 0;
