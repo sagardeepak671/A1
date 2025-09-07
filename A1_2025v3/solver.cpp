@@ -590,11 +590,8 @@ Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem,
         } 
         RESET_PROBLEM(problem);
         Solution current_solution;
-        if(is_empty_peak){
-            current_solution = GET_RANDOM_STATE(problem,restarts,ratio_list,true);
-        }else{
-            current_solution = GET_RANDOM_STATE(problem,restarts,ratio_list,false);
-        }
+        current_solution = GET_RANDOM_STATE(problem,restarts,ratio_list,is_empty_peak);
+
         current_value = EVALUATE_VALUE(problem, current_solution);
         int a=(250*int(problem.villages.size()+ problem.helicopters.size()));
         int local_iterations = a;
@@ -622,10 +619,10 @@ Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem,
         //         best_solution = current_solution;
         //         best_ratio_list = ratio_list;
         //     }
-        if(restarts==1){
-            // getting the random soultion constarins for each helicopter
-            UPDATE_RANDOM_STATS(problem, current_solution);
-        }
+        UPDATE_RANDOM_STATS(problem, best_solution);
+        // if(restarts==1){
+        //     // getting the random soultion constarins for each helicopter
+        // }
         if(best_value==0){
             // still best is zero mean zero state is the best state..
             // lets try i will try again with randowm assigning near villages
@@ -661,7 +658,7 @@ Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem,
 
 Solution solve(ProblemData& problem) {
     auto start_time = std::chrono::high_resolution_clock::now();
-    double seconds = 59.0 * problem.time_limit_minutes; //
+    double seconds = 58.0 * problem.time_limit_minutes; //
     auto time_limit = std::chrono::duration<double>(seconds);
     auto end_time= time_limit+start_time;
 
