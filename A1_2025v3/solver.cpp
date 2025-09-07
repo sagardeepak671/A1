@@ -253,9 +253,9 @@ ExtResult evaluate_extension(const Trip& trip, const Helicopter& helicopter,
     
     // Get package weights and values 
     // Calculate value/weight ratios
-    double dry_ratio = DRY_VAL / DRY_WT;
-    double perishable_ratio = WET_VAL / WET_WT;
-    double other_ratio = OTHER_VAL / OTHER_WT;
+    double dry_ratio = (double)problem.packages[0].value / problem.packages[0].weight;
+    double perishable_ratio = (double)problem.packages[1].value / problem.packages[1].weight;
+    double other_ratio = (double)problem.packages[2].value / problem.packages[2].weight;
     
     // Calculate expected food ratio based on weight percentage
     double expected_food_ratio = food_percentage * dry_ratio + (1.0 - food_percentage) * perishable_ratio;
@@ -286,16 +286,16 @@ ExtResult evaluate_extension(const Trip& trip, const Helicopter& helicopter,
         double target_perishable_weight = available_weight * (1.0 - food_percentage);
         
         // Calculate packet counts based on weight targets
-        int dry_packets = (int)(target_dry_weight / DRY_WT);
-        int perishable_packets = (int)(target_perishable_weight / WET_WT);
+        int dry_packets = (int)(target_dry_weight / problem.packages[0].weight);
+        int perishable_packets = (int)(target_perishable_weight / problem.packages[1].weight);
         
         // Constrain by village needs
         dry_packets = min(dry_packets, temp_food_needed);
         perishable_packets = min(perishable_packets, temp_food_needed - dry_packets);
         
         // Calculate actual weights
-        double actual_dry_weight = dry_packets * DRY_WT;
-        double actual_perishable_weight = perishable_packets * WET_WT;
+        double actual_dry_weight = dry_packets * problem.packages[0].weight;
+        double actual_perishable_weight = perishable_packets * problem.packages[1].weight;
         double total_food_weight = actual_dry_weight + actual_perishable_weight;
         
         // Check if it fits in available weight
@@ -304,7 +304,7 @@ ExtResult evaluate_extension(const Trip& trip, const Helicopter& helicopter,
             new_drop.perishable_food = perishable_packets;
             
             weight_to_drop += total_food_weight;
-            value_gained += dry_packets * DRY_VAL + perishable_packets * WET_VAL;
+            value_gained += dry_packets * problem.packages[0].value + perishable_packets * problem.packages[1].value;
             
             temp_food_needed -= (dry_packets + perishable_packets);
             available_weight -= total_food_weight;
@@ -312,15 +312,15 @@ ExtResult evaluate_extension(const Trip& trip, const Helicopter& helicopter,
     }
     
     // Allocate other supplies with remaining capacity
-    if (temp_other_needed > 0 && available_weight >= OTHER_WT) {
-        int other_packets = min(temp_other_needed, (int)(available_weight / OTHER_WT));
+    if (temp_other_needed > 0 && available_weight >= problem.packages[2].weight) {
+        int other_packets = min(temp_other_needed, (int)(available_weight / problem.packages[2].weight));
         
         if (other_packets > 0) {
             new_drop.other_supplies = other_packets;
-            double actual_other_weight = other_packets * OTHER_WT;
+            double actual_other_weight = other_packets * problem.packages[2].weight;
             
             weight_to_drop += actual_other_weight;
-            value_gained += other_packets * OTHER_VAL;
+            value_gained += other_packets * problem.packages[2].value;
             available_weight -= actual_other_weight;
         }
     }
@@ -331,18 +331,18 @@ ExtResult evaluate_extension(const Trip& trip, const Helicopter& helicopter,
         double remaining_dry_weight = available_weight * food_percentage;
         double remaining_perishable_weight = available_weight * (1.0 - food_percentage);
         
-        int additional_dry = min(temp_food_needed, (int)(remaining_dry_weight / DRY_WT));
+        int additional_dry = min(temp_food_needed, (int)(remaining_dry_weight / problem.packages[0].weight));
         int additional_perishable = min(temp_food_needed - additional_dry, 
-                                       (int)(remaining_perishable_weight / WET_WT));
+                                       (int)(remaining_perishable_weight / problem.packages[1].weight));
         
-        double additional_weight = additional_dry * DRY_WT + additional_perishable * WET_WT;
+        double additional_weight = additional_dry * problem.packages[0].weight + additional_perishable * problem.packages[1].weight;
         
         if (additional_weight <= available_weight && (additional_dry > 0 || additional_perishable > 0)) {
             new_drop.dry_food += additional_dry;
             new_drop.perishable_food += additional_perishable;
             
             weight_to_drop += additional_weight;
-            value_gained += additional_dry * DRY_VAL + additional_perishable * WET_VAL;
+            value_gained += additional_dry * problem.packages[0].value + additional_perishable * problem.packages[1].value;
         }
     }
     
