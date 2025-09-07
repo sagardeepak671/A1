@@ -3,6 +3,7 @@ import subprocess
 import re
 import time
 import blessed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 INPUTS_DIR = "inputs"
 OUTPUTS_DIR = "outputs"
@@ -14,6 +15,7 @@ if os.name == 'nt':
 else:
     MAIN_EXECUTABLE = "./main"
     CHECKER_EXECUTABLE = "./format_checker"
+
 
 def compile_project(term):
     print(term.bold("--- Step 1: Compiling Project ---"))
@@ -47,7 +49,42 @@ def compile_project(term):
     print(term.green("Compilation successful.\n"))
     return True
 
-def run_testcase(tc_name, term):
+
+def check_existing_output(tc_name):
+    input_path = os.path.join(INPUTS_DIR, tc_name)
+    output_path = os.path.join(OUTPUTS_DIR, tc_name)
+
+    if not os.path.exists(output_path):
+        return -1, "Output Missing"
+
+    try:
+        checker_result = subprocess.run(
+            [CHECKER_EXECUTABLE, input_path, output_path],
+            capture_output=True, text=True, timeout=30
+        )
+    except FileNotFoundError:
+        return -1, "Checker Not Found"
+    except subprocess.TimeoutExpired:
+        return -1, "Checker Timeout"
+
+    checker_output = checker_result.stdout
+    if "All constraints satisfied" in checker_output:
+        score_match = re.search(r"FINAL SCORE:\s*(-?[\d.eE+-]+)", checker_output)
+        if score_match:
+            score = float(score_match.group(1))
+            status = "Scored"
+        else:
+            score = -1
+            status = "Score Not Found"
+    else:
+        score = -1
+        status = "Constraints Failed"
+
+    return score, status
+
+
+def run_testcase(tc_name, _unused):
+    """Run a single testcase and return (score, status)."""
     input_path = os.path.join(INPUTS_DIR, tc_name)
     output_path = os.path.join(OUTPUTS_DIR, tc_name)
 
@@ -56,11 +93,7 @@ def run_testcase(tc_name, term):
             time_limit_minutes = int(f.readline().strip())
             time_limit_seconds = time_limit_minutes * 60
     except (IOError, ValueError):
-        print(term.red(" FAILED (Could not read time limit)"))
         return -1, "Read Error"
-
-    status_line_start = f"[{tc_name:<20}] Running ({time_limit_minutes} min limit)..."
-    print(status_line_start, end='', flush=True)
 
     start_time = time.time()
     try:
@@ -70,99 +103,19 @@ def run_testcase(tc_name, term):
         )
         main_process.wait(timeout=time_limit_seconds)
     except FileNotFoundError:
-        print(term.move_x(len(status_line_start)) + term.red(f"FAILED ({MAIN_EXECUTABLE} not found)"))
         return -1, "Exec Not Found"
     except subprocess.TimeoutExpired:
         main_process.kill()
-        duration = time.time() - start_time
-        print(term.move_x(len(status_line_start)) + term.yellow(f"Timeout ({duration:.2f}s)"))
-        return 0, "Timeout"
+        return 0, f"Timeout ({time_limit_seconds}s)"
     except Exception:
-        print(term.move_x(len(status_line_start)) + term.red("FAILED (Runtime Error)"))
         return -1, "Runtime Error"
 
     run_duration = time.time() - start_time
-    check_status = f"Done ({run_duration:.2f}s) | Checking..."
-    print(term.move_x(len(status_line_start)) + check_status, end='', flush=True)
-
-    score, status = check_existing_output(tc_name, term, len(status_line_start) + len(check_status))
+    score, status = check_existing_output(tc_name)
+    if status == "Scored":
+        status = f"Scored in {run_duration:.2f}s"
     return score, status
 
-def draw_selection_screen(term, testcases, selected, key_map_inv):
-    print(term.clear + term.move_y(0))
-    print(term.bold("Test Case Runner"))
-    print("Toggle: " + term.yellow("[0-9,a-z]") + " individual, " + term.yellow("[S/M/L]") + " by size, " + term.yellow("[A]") + " all")
-    print("Actions: " + term.yellow("[R]") + " Run, " + term.yellow("[U]") + " Re-check Outputs, " + term.yellow("[q]") + " Quit")
-    print("-" * 60)
-
-    for i, tc_name in enumerate(testcases):
-        key = key_map_inv[tc_name]
-        selector = f"[{key}]"
-
-        if tc_name in selected:
-            print(term.green(f" {selector} {tc_name}"))
-        else:
-            print(f" {selector} {tc_name}")
-
-def check_existing_output(tc_name, term, offset=0):
-    input_path = os.path.join(INPUTS_DIR, tc_name)
-    output_path = os.path.join(OUTPUTS_DIR, tc_name)
-
-    if offset == 0:
-        status_line_start = f"[{tc_name:<20}] Checking output..."
-        print(status_line_start, end='', flush=True)
-        offset = len(status_line_start)
-
-    if not os.path.exists(output_path):
-        print(term.move_x(offset) + term.yellow(" SKIPPED (No output file)"))
-        return -1, "Output Missing"
-
-    try:
-        checker_result = subprocess.run(
-            [CHECKER_EXECUTABLE, input_path, output_path],
-            capture_output=True, text=True, timeout=30
-        )
-    except FileNotFoundError:
-        print(term.move_x(offset) + term.red(f"FAILED ({CHECKER_EXECUTABLE} not found)"))
-        return -1, "Checker Not Found"
-    except subprocess.TimeoutExpired:
-        print(term.move_x(offset) + term.red("FAILED (checker timed out)"))
-        return -1, "Checker Timeout"
-
-    checker_output = checker_result.stdout
-    if "All constraints satisfied" in checker_output:
-        score_match = re.search(r"FINAL SCORE:\s*(-?[\d.eE+-]+)", checker_output)
-        if score_match:
-            score = float(score_match.group(1))
-            status = "Scored"
-            final_status_msg = f" OK | Score: {score:,.2f}"
-            print(term.move_x(offset) + term.green(final_status_msg))
-        else:
-            score = -1
-            status = "Score Not Found"
-            print(term.move_x(offset) + term.red("FAILED (Score missing)"))
-    else:
-        score = -1
-        status = "Constraints Failed"
-        print(term.move_x(offset) + term.red("FAILED (Constraints)"))
-
-    return score, status
-
-def regenerate_results(term, testcases):
-    print(term.clear)
-    print(term.bold(f"--- Re-generating Results from Existing Outputs ---"))
-
-    results = []
-    with open(RESULTS_FILE, 'w') as log_file:
-        log_file.write("Test Case, Score, Status\n")
-
-    for tc_name in sorted(testcases):
-        score, status = check_existing_output(tc_name, term)
-        results.append({"tc": tc_name, "score": score, "status": status})
-        with open(RESULTS_FILE, 'a') as log_file:
-            log_file.write(f"{tc_name}, {score}, {status}\n")
-
-    print_final_table(term, results)
 
 def print_final_table(term, results):
     print(term.bold(f"\n--- Final Results --- (Full log in {RESULTS_FILE})"))
@@ -177,8 +130,10 @@ def print_final_table(term, results):
             total_score += score
 
         status_color = term.green
-        if res['status'] != 'Scored':
-            status_color = term.yellow if res['status'] in ['Timeout', 'Output Missing'] else term.red
+        if res['status'].startswith("Timeout") or res['status'] in ['Output Missing']:
+            status_color = term.yellow
+        elif not res['status'].startswith("Scored"):
+            status_color = term.red
 
         score_str = f"{score:15.2f}"
         if score == -1:
@@ -192,6 +147,33 @@ def print_final_table(term, results):
     print(f"{term.bold('TOTAL SCORE'):<32} | {term.bold_green(f'{total_score:15,.2f}')} |")
     print("-" * 60)
 
+
+def run_all_testcases_concurrently(term, selected):
+    print(term.bold(f"--- Step 2: Running {len(selected)} Selected Test Cases (Concurrent) ---"))
+
+    results = []
+    with open(RESULTS_FILE, 'w') as log_file:
+        log_file.write("Test Case, Score, Status\n")
+
+    with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
+        futures = {executor.submit(run_testcase, tc_name, None): tc_name for tc_name in sorted(selected)}
+
+        for future in as_completed(futures):
+            tc_name = futures[future]
+            try:
+                score, status = future.result()
+            except Exception as e:
+                score, status = -1, f"Error: {e}"
+
+            print(f"[{tc_name}] -> {status} | Score: {score}")
+            results.append({"tc": tc_name, "score": score, "status": status})
+
+            with open(RESULTS_FILE, 'a') as log_file:
+                log_file.write(f"{tc_name}, {score}, {status}\n")
+
+    print_final_table(term, results)
+
+
 def main():
     term = blessed.Terminal()
     if not os.path.isdir(INPUTS_DIR):
@@ -203,81 +185,13 @@ def main():
         print(term.yellow(f"No testcases found in '{INPUTS_DIR}'."))
         return
 
-    keys = "0123456789abcdefghijklmnopqrstuvwxyz"
-    key_map = {keys[i]: tc for i, tc in enumerate(testcases)}
-    key_map_inv = {tc: keys[i] for i, tc in enumerate(testcases)}
-    selected = set(testcases)
-
-    with term.cbreak(), term.hidden_cursor():
-        to_run = False
-        recheck = False
-        while True:
-            draw_selection_screen(term, testcases, selected, key_map_inv)
-            key = term.inkey()
-            if key == 'A':
-                if len(selected) == len(testcases):
-                    selected.clear()
-                else:
-                    selected = set(testcases)
-            elif key == 'S':
-                small_tcs = {tc for tc in testcases if tc.endswith("_s.txt")}
-                if small_tcs.issubset(selected):
-                    selected -= small_tcs
-                else:
-                    selected |= small_tcs
-            elif key == 'M':
-                medium_tcs = {tc for tc in testcases if tc.endswith("_m.txt")}
-                if medium_tcs.issubset(selected):
-                    selected -= medium_tcs
-                else:
-                    selected |= medium_tcs
-            elif key == 'L':
-                large_tcs = {tc for tc in testcases if tc.endswith("_l.txt")}
-                if large_tcs.issubset(selected):
-                    selected -= large_tcs
-                else:
-                    selected |= large_tcs
-            elif key == 'U':
-                recheck = True
-                break
-            elif key == 'R':
-                to_run = True
-                break
-            elif key in key_map:
-                tc = key_map[key]
-                if tc in selected:
-                    selected.remove(tc)
-                else:
-                    selected.add(tc)
-
-    print(term.clear)
-
-    if recheck:
-        regenerate_results(term, testcases)
-        return
-
-    if not to_run or not selected:
-        print("No testcases selected. Exiting.")
-        return
-
     if not compile_project(term):
         return
 
     os.makedirs(OUTPUTS_DIR, exist_ok=True)
+    selected = set(testcases)
 
-    print(term.bold(f"--- Step 2: Running {len(selected)} Selected Test Cases ---"))
-
-    results = []
-    with open(RESULTS_FILE, 'w') as log_file:
-        log_file.write("Test Case, Score, Status\n")
-
-    for tc_name in sorted(list(selected)):
-        score, status = run_testcase(tc_name, term)
-        results.append({"tc": tc_name, "score": score, "status": status})
-        with open(RESULTS_FILE, 'a') as log_file:
-            log_file.write(f"{tc_name}, {score}, {status}\n")
-
-    print_final_table(term, results)
+    run_all_testcases_concurrently(term, selected)
 
 
 if __name__ == "__main__":
