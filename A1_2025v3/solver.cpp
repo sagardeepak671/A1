@@ -1,507 +1,691 @@
 #include "solver.h"
+#include "helper.h"
 #include <iostream>
 #include <chrono>
+#include <unordered_map>
 #include <map>
 #include <algorithm>
 #include <random>
-#include <cstdlib>
-#include <ctime>
+#include <unordered_set>
+
+std::random_device rd;
+std::mt19937 gen(rd()); // Mersenne Twister engine
+std::uniform_real_distribution<> dist(0.0, 1.0);
 
 using namespace std;
-
-// Global variables
-double DRY_VAL, WET_VAL, OTHER_VAL;
-double DRY_WEIGHT, WET_WEIGHT, OTHER_WEIGHT;
-double MAX_DIST_OF_EACH_HELI;
-int NUM_HELICOPTERS;
-int NUM_VILLAGES;
-int NUM_CITIES;
-ProblemData PROBLEM;
-
-// Helper function to get current village needs based on solution state
-map<int, pair<int, int>> get_current_village_needs(const Solution& solution) {
-    map<int, pair<int, int>> current_needs; // village_id -> {meal_need, other_need}
+// You can add any helper functions or classes you need here.
+constexpr double EPSILON = 1e-6;
+/**
+ * @brief The main function to implement your search/optimization algorithm.
+ * * This is a placeholder implementation. It creates a simple, likely invalid,
+ * plan to demonstrate how to build the Solution object. 
+ * * TODO: REPLACE THIS ENTIRE FUNCTION WITH YOUR ALGORITHM.
+ */
+ 
+struct ExtResult {
+    Drop drop;
+    double value_increase;
+    double distance_extension;
     
-    // Initialize with original needs
-    for(int i = 0; i < NUM_VILLAGES; i++) {
-        current_needs[i] = {PROBLEM.villages[i].population * 9, PROBLEM.villages[i].population * 1};
-    }
-    
-    // Subtract what's already been delivered
-    for(const auto& heli_plan : solution) {
-        for(const auto& trip : heli_plan.trips) {
-            for(const auto& drop : trip.drops) {
-                current_needs[drop.village_id].first -= (drop.dry_food + drop.perishable_food);
-                current_needs[drop.village_id].second -= drop.other_supplies;
-                current_needs[drop.village_id].first = max(0, current_needs[drop.village_id].first);
-                current_needs[drop.village_id].second = max(0, current_needs[drop.village_id].second);
+    // Constructor
+    ExtResult(Drop d, double v, double dist)
+        : drop(d), value_increase(v), distance_extension(dist) {}
+};
+
+int TOT_VILLAGES,TOT_HELICOPTERS,D_MAX;
+int DRY_WT,WET_WT,OTHER_WT;
+int DRY_VAL,WET_VAL,OTHER_VAL;
+
+
+double EVALUATE_VALUE(const ProblemData& problem, const Solution& solution){
+    double total_value = 0.0;
+    double total_cost = 0.0;
+
+    for(const auto &heli_plan:solution){
+        int heli_id = heli_plan.helicopter_id;
+        const Helicopter* heli_ptr = &problem.helicopters[heli_id-1];
+        if (!heli_ptr) continue; // Invalid helicopter ID, skip
+        
+        for(const auto &trip:heli_plan.trips){
+            // Calculate value from drops
+            for(const auto &drop:trip.drops){
+                const Village* village_ptr = &problem.villages[drop.village_id-1];
+                if (!village_ptr) continue; // Invalid village ID, skip
+                
+                total_value += drop.dry_food * problem.packages[0].value;
+                total_value += drop.perishable_food * problem.packages[1].value;
+                total_value += drop.other_supplies * problem.packages[2].value;
             }
+            // Calculate cost from distance
+            total_cost += heli_ptr->alpha * trip.distance_covered + heli_ptr->fixed_cost;
         }
     }
-    
-    return current_needs;
+    return total_value - total_cost;
 }
 
-// Helper function to get current helicopter usage
-map<int, double> get_current_helicopter_distance_used(const Solution& solution) {
-    map<int, double> distance_used;
+//BOOOOOOOOOOOOOOOOOOSTERRRRRRRRRRRRRR
+std::vector<int> solveSimpleTSP(const std::vector<int>& village_ids, const ProblemData& problem) {
+    if (village_ids.size() <= 1) return village_ids;
     
-    // Initialize with helicopter IDs from problem data
-    for(const auto& heli : PROBLEM.helicopters) {
-        distance_used[heli.id] = 0.0;
-    }
+    std::vector<int> tour;
+    std::vector<bool> visited(village_ids.size(), false);
     
-    for(const auto& heli_plan : solution) {
-        for(const auto& trip : heli_plan.trips) {
-            distance_used[heli_plan.helicopter_id] += trip.dist_travelled;
-        }
-    }
+    // Start from first village
+    int current_idx = 0;
+    tour.push_back(village_ids[current_idx]);
+    visited[current_idx] = true;
     
-    return distance_used;
-}
-double EVALUATE_COST_OF_SOLUTION(const Solution& solution) {
-    double total_value_achieved = 0.0;
-    double total_trip_cost = 0.0;
-    
-    for(const auto& heli_plan : solution){
-        for(const auto& trip : heli_plan.trips){ 
-            // Find helicopter by ID
-            const Helicopter* heli = nullptr;
-            for(const auto& h : PROBLEM.helicopters) {
-                if(h.id == heli_plan.helicopter_id) {
-                    heli = &h;
-                    break;
+    // Nearest neighbor heuristic
+    for (int step = 1; step < (int)village_ids.size(); step++) {
+        double min_dist = std::numeric_limits<double>::max();
+        int next_idx = -1;
+        
+        Point current_pos = problem.villages[village_ids[current_idx] - 1].coords;
+        
+        for (int i = 0; i < (int)village_ids.size(); i++) {
+            if (!visited[i]) {
+                Point candidate_pos = problem.villages[village_ids[i] - 1].coords;
+                double dist = distance(current_pos, candidate_pos);
+                
+                if (dist < min_dist) {
+                    min_dist = dist;
+                    next_idx = i;
                 }
             }
-            if(!heli) continue; // Skip if helicopter not found
-            
-            // Calculate trip cost = F + alpha * distance
-            total_trip_cost += heli->fixed_cost + heli->alpha * trip.dist_travelled;
-            
-            // Calculate value achieved from packages delivered
-            for(const auto& drop : trip.drops){
-                total_value_achieved += drop.dry_food * DRY_VAL;
-                total_value_achieved += drop.perishable_food * WET_VAL;
-                total_value_achieved += drop.other_supplies * OTHER_VAL;
-            }
+        }
+        
+        if (next_idx != -1) {
+            tour.push_back(village_ids[next_idx]);
+            visited[next_idx] = true;
+            current_idx = next_idx;
         }
     }
-    return total_value_achieved - total_trip_cost;
+    
+    return tour;
 }
 
-Solution GET_A_RANDOM_STATE(){
-    Solution solution;
-    
-    // Initialize empty helicopter plans
-    for(int i = 0; i < NUM_HELICOPTERS; i++){
-        HelicopterPlan plan;
-        plan.helicopter_id = PROBLEM.helicopters[i].id;  // Use actual helicopter ID, not array index
-        solution.push_back(plan);
-    }
-    
-    // Create random trips for each helicopter
-    for(int h = 0; h < NUM_HELICOPTERS; h++) {
-        const Helicopter& heli = PROBLEM.helicopters[h];
-        Point home_city = PROBLEM.cities[heli.home_city_id - 1];  // Convert to 0-based index
-        double used_distance = 0.0;
-        
-        // Add 1-3 random trips per helicopter
-        int num_trips = 1 + rand() % 3;
-        
-        for(int t = 0; t < num_trips; t++) {
-            // Try to create a feasible trip
-            vector<int> village_candidates;
-            for(int v = 0; v < NUM_VILLAGES; v++) {
-                double dist_to_village = distance(home_city, PROBLEM.villages[v].coords);
-                double round_trip_dist = dist_to_village * 2;
-                
-                // Check if trip is feasible
-                if(used_distance + round_trip_dist <= MAX_DIST_OF_EACH_HELI && 
-                   round_trip_dist <= heli.distance_capacity) {
-                    village_candidates.push_back(v);
-                }
-            }
-            
-            if(village_candidates.empty()) break;
-            
-            // Select random village
-            int selected_village = village_candidates[rand() % village_candidates.size()];
-            const Village& village = PROBLEM.villages[selected_village];
-            
-            double dist_to_village = distance(home_city, village.coords);
-            double round_trip_dist = dist_to_village * 2;
-            
-            // Calculate random delivery amounts within weight capacity
-            double remaining_weight = heli.weight_capacity;
-            
-            // Random amounts (but reasonable)
-            int max_perishable = min((int)(remaining_weight / WET_WEIGHT), village.population * 9);
-            int perishable_amount = rand() % (max_perishable + 1);
-            remaining_weight -= perishable_amount * WET_WEIGHT;
-            
-            int max_dry = min((int)(remaining_weight / DRY_WEIGHT), village.population * 9 - perishable_amount);
-            int dry_amount = rand() % (max_dry + 1);
-            remaining_weight -= dry_amount * DRY_WEIGHT;
-            
-            int max_other = min((int)(remaining_weight / OTHER_WEIGHT), village.population * 1);
-            int other_amount = rand() % (max_other + 1);
-            
-            // Only add trip if we're delivering something
-            if(perishable_amount > 0 || dry_amount > 0 || other_amount > 0) {
-                Trip trip;
-                trip.dry_food_pickup = dry_amount;
-                trip.perishable_food_pickup = perishable_amount;
-                trip.other_supplies_pickup = other_amount;
-                trip.dist_travelled = round_trip_dist;
-                
-                Drop drop;
-                drop.village_id = PROBLEM.villages[selected_village].id;  // Use actual village ID, not index
-                drop.dry_food = dry_amount;
-                drop.perishable_food = perishable_amount;
-                drop.other_supplies = other_amount;
-                
-                trip.drops.push_back(drop);
-                solution[h].trips.push_back(trip);
-                
-                used_distance += round_trip_dist;
-            }
-        }
-    }
-    
-    return solution;
+// Advanced TSP solver placeholder (replace with Christofides implementation)
+std::vector<int> solveChristofidesTSP(const std::vector<int>& village_ids, const ProblemData& problem) {
+    // TODO: Implement Christofides algorithm here
+    // For now, use simple nearest neighbor
+    return solveSimpleTSP(village_ids, problem);
 }
 
-Solution S1(const Solution& current_solution) {
-    // S1: Add a new trip to a random helicopter
-    Solution new_solution = current_solution;
-    
-    // Get current state
-    auto current_needs = get_current_village_needs(current_solution);
-    auto current_distances = get_current_helicopter_distance_used(current_solution);
-    
-    // Try to add a trip to a random helicopter
-    vector<int> helicopter_candidates;
-    for(const auto& heli : PROBLEM.helicopters) {
-        if(current_distances[heli.id] < MAX_DIST_OF_EACH_HELI - 10) { // Leave some margin
-            helicopter_candidates.push_back(heli.id);
-        }
-    }
+void BOOSTER_FUNCTION(Solution& solution, ProblemData& problem) {
 
-    if(helicopter_candidates.empty()) return current_solution; // No feasible helicopter
-    
-    int selected_heli_id = helicopter_candidates[rand() % helicopter_candidates.size()];
-    
-    // Find the helicopter object
-    const Helicopter* heli = nullptr;
-    for(const auto& h : PROBLEM.helicopters) {
-        if(h.id == selected_heli_id) {
-            heli = &h;
-            break;
-        }
-    }
-    if(!heli) return current_solution;
-    
-    Point home_city = PROBLEM.cities[heli->home_city_id - 1];  // Convert to 0-based index
-    
-    // Find which index this helicopter has in the solution
-    int solution_index = -1;
-    for(int i = 0; i < new_solution.size(); i++) {
-        if(new_solution[i].helicopter_id == selected_heli_id) {
-            solution_index = i;
-            break;
-        }
-    }
-    if(solution_index == -1) return current_solution;
-    
-    // Find villages with remaining needs
-    vector<int> needy_villages;
-    for(int v = 0; v < NUM_VILLAGES; v++) {
-        if(current_needs[v].first > 0 || current_needs[v].second > 0) {
-            double dist_to_village = distance(home_city, PROBLEM.villages[v].coords);
-            double round_trip_dist = dist_to_village * 2;
+    for (auto& heli_plan : solution) {
+        for (auto& trip : heli_plan.trips) {
             
-            if(current_distances[selected_heli_id] + round_trip_dist <= MAX_DIST_OF_EACH_HELI &&
-               round_trip_dist <= heli->distance_capacity) {
-                needy_villages.push_back(v);
-            }
-        }
-    }
-    
-    if(needy_villages.empty()) return current_solution; // No feasible village
-    
-    int selected_village = needy_villages[rand() % needy_villages.size()];
-    const Village& village = PROBLEM.villages[selected_village];
-    
-    double dist_to_village = distance(home_city, village.coords);
-    double round_trip_dist = dist_to_village * 2;
-    
-    // Calculate delivery amounts
-    int meal_need = current_needs[selected_village].first;
-    int other_need = current_needs[selected_village].second;
-    
-    double remaining_weight = heli->weight_capacity;
-    
-    // Prefer perishable food
-    int perishable_delivery = min(meal_need, (int)(remaining_weight / WET_WEIGHT));
-    remaining_weight -= perishable_delivery * WET_WEIGHT;
-    meal_need -= perishable_delivery;
-    
-    int dry_delivery = min(meal_need, (int)(remaining_weight / DRY_WEIGHT));
-    remaining_weight -= dry_delivery * DRY_WEIGHT;
-    
-    int other_delivery = min(other_need, (int)(remaining_weight / OTHER_WEIGHT));
-    
-    // Create and add the trip
-    if(perishable_delivery > 0 || dry_delivery > 0 || other_delivery > 0) {
-        Trip new_trip;
-        new_trip.dry_food_pickup = dry_delivery;
-        new_trip.perishable_food_pickup = perishable_delivery;
-        new_trip.other_supplies_pickup = other_delivery;
-        new_trip.dist_travelled = round_trip_dist;
-        
-        Drop drop;
-        drop.village_id = PROBLEM.villages[selected_village].id;  // Use actual village ID, not index
-        drop.dry_food = dry_delivery;
-        drop.perishable_food = perishable_delivery;
-        drop.other_supplies = other_delivery;
-        
-        new_trip.drops.push_back(drop);
-        new_solution[solution_index].trips.push_back(new_trip);
-    }
-    
-    return new_solution;
-}
+            // Skip empty trips
+            if (trip.drops.empty()) continue;
+            
+            // **PHASE 1: Route Optimization using TSP**
+            
+            // Extract village IDs from drops
+            // std::vector<int> village_ids;
+            // for (const auto& drop : trip.drops) {
+            //     village_ids.push_back(drop.village_id);
+            // }
+            
+            // // Get optimized route using TSP solver
+            // std::vector<int> optimized_route = solveChristofidesTSP(village_ids, problem);
+            
+            // // Reorder drops according to optimized route
+            // std::vector<Drop> reordered_drops;
+            // for (int village_id : optimized_route) {
+            //     auto it = std::find_if(trip.drops.begin(), trip.drops.end(),
+            //                          [&](const Drop& d) { return d.village_id == village_id; });
+            //     if (it != trip.drops.end()) {
+            //         reordered_drops.push_back(*it);
+            //     }
+            // }
+            // trip.drops = reordered_drops;
+            
+            // // Recalculate trip distance based on optimized route
+            // const Helicopter& helicopter = problem.helicopters[heli_plan.helicopter_id - 1];
+            // Point home_city = problem.cities[helicopter.home_city_id - 1];
+            // Point current_pos = home_city;
+            // double total_distance = 0.0;
+            
+            // for (const auto& drop : trip.drops) {
+            //     const Village& village = problem.villages[drop.village_id - 1];
+            //     total_distance += distance(current_pos, village.coords);
+            //     current_pos = village.coords;
+            // }
+            // total_distance += distance(current_pos, home_city);  // Return to home
+            
+            // // Update helicopter's total distance
+            // double old_distance = trip.distance_covered;
+            // trip.distance_covered = total_distance;
+            // const_cast<Helicopter&>(helicopter).total_distance_covered += (total_distance - old_distance);
+            
+            // **PHASE 2: Convert Perishable to Dry Food**
+            
+            // **PHASE 2: Convert Perishable to Dry Food (Simple Approach)**
 
-Solution S2(const Solution& current_solution){
-    // S2: Add a village to an existing trip
-    Solution new_solution = current_solution;
-    
-    // Get current state
-    auto current_needs = get_current_village_needs(current_solution);
-    auto current_distances = get_current_helicopter_distance_used(current_solution);
-    
-    // Find helicopters with existing trips
-    vector<pair<int, int>> trip_candidates; // {solution_index, trip_index}
-    for(size_t h = 0; h < new_solution.size(); h++) {
-        for(size_t t = 0; t < new_solution[h].trips.size(); t++) {
-            trip_candidates.push_back({(int)h, (int)t});
-        }
-    }
-    
-    if(trip_candidates.empty()) return current_solution; // No existing trips
-    
-    // Select random trip to extend
-    auto selected = trip_candidates[rand() % trip_candidates.size()];
-    int solution_index = selected.first;
-    int trip_id = selected.second;
-    
-    int heli_id = new_solution[solution_index].helicopter_id;
-    
-    // Find the helicopter object
-    const Helicopter* heli = nullptr;
-    for(const auto& h : PROBLEM.helicopters) {
-        if(h.id == heli_id) {
-            heli = &h;
-            break;
-        }
-    }
-    if(!heli) return current_solution;
-    
-    Trip& trip = new_solution[solution_index].trips[trip_id];
-    Point home_city = PROBLEM.cities[heli->home_city_id - 1];  // Convert to 0-based index
-    
-    // Calculate current trip route and remaining capacity
-    double current_weight = trip.dry_food_pickup * DRY_WEIGHT + 
-                           trip.perishable_food_pickup * WET_WEIGHT + 
-                           trip.other_supplies_pickup * OTHER_WEIGHT;
-    double remaining_weight = heli->weight_capacity - current_weight;
-    
-    if(remaining_weight < 1.0) return current_solution; // No weight capacity
-    
-    // Find last village in current trip
-    Point last_point = home_city;
-    if(!trip.drops.empty()) {
-        int last_village = trip.drops.back().village_id;
-        last_point = PROBLEM.villages[last_village].coords;
-    }
-    
-    // Find villages that can be added
-    vector<int> candidate_villages;
-    for(int v = 0; v < NUM_VILLAGES; v++) {
-        if(current_needs[v].first > 0 || current_needs[v].second > 0) {
-            // Check if village is already in this trip
-            bool already_visited = false;
-            for(const auto& drop : trip.drops) {
-                if(drop.village_id == v) {
-                    already_visited = true;
-                    break;
-                }
-            }
-            
-            if(!already_visited) {
-                Point village_coords = PROBLEM.villages[v].coords;
-                double dist_to_village = distance(last_point, village_coords);
-                double dist_home = distance(village_coords, home_city);
+            for (auto& drop : trip.drops) {
+                // Village& village = problem.villages[drop.village_id - 1];
                 
-                // Calculate new total trip distance
-                double new_trip_dist = trip.dist_travelled - distance(last_point, home_city) + 
-                                      dist_to_village + dist_home;
-                
-                // Check feasibility
-                if(new_trip_dist <= heli->distance_capacity) {
-                    double new_total_dist = current_distances[heli_id] - trip.dist_travelled + new_trip_dist;
-                    if(new_total_dist <= MAX_DIST_OF_EACH_HELI) {
-                        candidate_villages.push_back(v);
+                // Keep converting while we have perishable food and village needs more food
+                while (drop.perishable_food > 0 && problem.villages[drop.village_id - 1].food_needed > 0) {
+                    double perishable_weight = problem.packages[1].weight;
+                    double dry_weight = problem.packages[0].weight;
+                    
+                    // How many dry packets can we get by removing 1 perishable packet?
+                    int dry_packets_gained = static_cast<int>(perishable_weight / dry_weight);
+                    // cout<<drop.village_id<<" : "<<problem.villages[drop.village_id - 1].food_needed<<endl;
+                    // Only convert if we gain more dry packets than we lose perishable packets
+                    if (dry_packets_gained > 1) {
+                        // Limit by village need
+                        int actual_dry_to_add = min(dry_packets_gained, problem.villages[drop.village_id - 1].food_needed);
+                        
+                        // Make the conversion: remove 1 perishable, add multiple dry
+                        if (WET_VAL>DRY_VAL*actual_dry_to_add){
+                            break;
+                        }
+                        drop.perishable_food -= 1;
+                        drop.dry_food += actual_dry_to_add;
+                        
+                        // Update trip pickups
+                        trip.perishable_food_pickup -= 1;
+                        trip.dry_food_pickup += actual_dry_to_add;
+                        
+                        // Update village needs
+                        problem.villages[drop.village_id - 1].food_needed -= (actual_dry_to_add-1);
+                        
+                        // Update weight (trip gets lighter since dry is lighter)
+                        trip.weight_carried -= perishable_weight;
+                        trip.weight_carried += actual_dry_to_add * dry_weight;
+                    } else {
+                        break; // No beneficial conversion possible
                     }
                 }
             }
+
+            
+            // Recalculate trip weight to ensure accuracy
+            trip.weight_carried = 0.0;
+            for (const auto& drop : trip.drops) {
+                trip.weight_carried += drop.dry_food * problem.packages[0].weight +
+                                     drop.perishable_food * problem.packages[1].weight +
+                                     drop.other_supplies * problem.packages[2].weight;
+            }
+        }
+    }
+}
+
+ 
+
+ExtResult evaluate_extension(const Trip& trip, const Helicopter& helicopter, 
+                           const Village& new_village, ProblemData& problem, 
+                           double food_percentage) {
+    
+    // Get helicopter info
+    Point home_city = problem.cities[helicopter.home_city_id -1];
+    bool empty_trip = false;
+    
+    // Check distance constraint
+    double distance_extension = 0.0;
+    
+    if (!trip.drops.empty()) {
+        int last_village_id = trip.drops.back().village_id;
+        int last_index = last_village_id -1;
+        Village* last_village = &problem.villages[last_index];
+        
+        double dist_last_to_new = distance(last_village->coords, new_village.coords);
+        double dist_new_to_home = distance(new_village.coords, home_city);
+        double dist_last_to_home = distance(last_village->coords, home_city);
+        
+        distance_extension = dist_last_to_new + dist_new_to_home - dist_last_to_home;
+    } else {
+        distance_extension = 2.0 * distance(new_village.coords, home_city);
+        empty_trip = true;
+    }
+    
+    // Check feasibility constraints
+    if (trip.distance_covered + distance_extension > helicopter.distance_capacity ) {
+        return ExtResult({-1, 0, 0, 0}, -1e9, 0.0);
+    }
+
+    if (helicopter.total_distance_covered + distance_extension > problem.d_max ) {
+        return ExtResult({-1, 0, 0, 0}, -1e9, 0.0);
+    }
+    
+    double remaining_weight = helicopter.weight_capacity - trip.weight_carried;
+    if (remaining_weight <= 0) {
+        return ExtResult({-1, 0, 0, 0}, -1e9, 0.0);
+    }
+    
+    // Get package weights and values
+    double dry_weight = problem.packages[0].weight;
+    double perishable_weight = problem.packages[1].weight;
+    double other_weight = problem.packages[2].weight;
+    
+    double dry_value = problem.packages[0].value;
+    double perishable_value = problem.packages[1].value;
+    double other_value = problem.packages[2].value;
+    
+    // Calculate value/weight ratios
+    double dry_ratio = dry_value / dry_weight;
+    double perishable_ratio = perishable_value / perishable_weight;
+    double other_ratio = other_value / other_weight;
+    
+    // Calculate expected food ratio based on weight percentage
+    double expected_food_ratio = food_percentage * dry_ratio + (1.0 - food_percentage) * perishable_ratio;
+    
+    // Prioritize food if it has better or equal value/weight ratio
+    bool prioritize_food = expected_food_ratio >= other_ratio;
+    
+    // Initialize drop
+    Drop new_drop;
+    new_drop.village_id = new_village.id;
+    new_drop.dry_food = 0;
+    new_drop.perishable_food = 0;
+    new_drop.other_supplies = 0;
+    
+    double weight_to_drop = 0.0;
+    double value_gained = 0.0;
+    double available_weight = remaining_weight;
+    
+    int temp_food_needed = new_village.food_needed;
+    int temp_other_needed = new_village.other_supplies_needed;
+    
+    // Allocate based on priority
+    if (prioritize_food && temp_food_needed > 0 && available_weight > 0) {
+        // Allocate food first - split by WEIGHT percentage
+        
+        // Calculate target weights for dry and perishable food
+        double target_dry_weight = available_weight * food_percentage;
+        double target_perishable_weight = available_weight * (1.0 - food_percentage);
+        
+        // Calculate packet counts based on weight targets
+        int dry_packets = (int)(target_dry_weight / dry_weight);
+        int perishable_packets = (int)(target_perishable_weight / perishable_weight);
+        
+        // Constrain by village needs
+        dry_packets = min(dry_packets, temp_food_needed);
+        perishable_packets = min(perishable_packets, temp_food_needed - dry_packets);
+        
+        // Calculate actual weights
+        double actual_dry_weight = dry_packets * dry_weight;
+        double actual_perishable_weight = perishable_packets * perishable_weight;
+        double total_food_weight = actual_dry_weight + actual_perishable_weight;
+        
+        // Check if it fits in available weight
+        if (total_food_weight <= available_weight && (dry_packets > 0 || perishable_packets > 0)) {
+            new_drop.dry_food = dry_packets;
+            new_drop.perishable_food = perishable_packets;
+            
+            weight_to_drop += total_food_weight;
+            value_gained += dry_packets * dry_value + perishable_packets * perishable_value;
+            
+            temp_food_needed -= (dry_packets + perishable_packets);
+            available_weight -= total_food_weight;
         }
     }
     
-    if(candidate_villages.empty()) return current_solution; // No feasible villages
-    
-    int selected_village = candidate_villages[rand() % candidate_villages.size()];
-    
-    // Calculate delivery amounts for this village
-    int meal_need = current_needs[selected_village].first;
-    int other_need = current_needs[selected_village].second;
-    
-    int perishable_delivery = min(meal_need, (int)(remaining_weight / WET_WEIGHT));
-    remaining_weight -= perishable_delivery * WET_WEIGHT;
-    meal_need -= perishable_delivery;
-    
-    int dry_delivery = min(meal_need, (int)(remaining_weight / DRY_WEIGHT));
-    remaining_weight -= dry_delivery * DRY_WEIGHT;
-    
-    int other_delivery = min(other_need, (int)(remaining_weight / OTHER_WEIGHT));
-    
-    if(perishable_delivery > 0 || dry_delivery > 0 || other_delivery > 0) {
-        // Update trip pickups
-        trip.dry_food_pickup += dry_delivery;
-        trip.perishable_food_pickup += perishable_delivery;
-        trip.other_supplies_pickup += other_delivery;
+    // Allocate other supplies with remaining capacity
+    if (temp_other_needed > 0 && available_weight >= other_weight) {
+        int other_packets = min(temp_other_needed, (int)(available_weight / other_weight));
         
-        // Add new drop
-        Drop new_drop;
-        new_drop.village_id = PROBLEM.villages[selected_village].id;  // Use actual village ID, not index
-        new_drop.dry_food = dry_delivery;
-        new_drop.perishable_food = perishable_delivery;
-        new_drop.other_supplies = other_delivery;
-        
-        trip.drops.push_back(new_drop);
-        
-        // Update trip distance
-        Point village_coords = PROBLEM.villages[selected_village].coords;
-        double dist_to_village = distance(last_point, village_coords);
-        double dist_home = distance(village_coords, home_city);
-        trip.dist_travelled = trip.dist_travelled - distance(last_point, home_city) + 
-                             dist_to_village + dist_home;
+        if (other_packets > 0) {
+            new_drop.other_supplies = other_packets;
+            double actual_other_weight = other_packets * other_weight;
+            
+            weight_to_drop += actual_other_weight;
+            value_gained += other_packets * other_value;
+            available_weight -= actual_other_weight;
+        }
     }
     
-    return new_solution;
-}
-
-Solution SUCCESSOR_FUNCTION(const Solution& current_solution){
-    // Choose between different successor functions randomly
-    int choice = rand() % 2;
+    // If we didn't prioritize food initially, try to allocate remaining food
+    if (!prioritize_food && temp_food_needed > 0 && available_weight > 0) {
+        // Use remaining weight for food with same percentage split
+        double remaining_dry_weight = available_weight * food_percentage;
+        double remaining_perishable_weight = available_weight * (1.0 - food_percentage);
+        
+        int additional_dry = min(temp_food_needed, (int)(remaining_dry_weight / dry_weight));
+        int additional_perishable = min(temp_food_needed - additional_dry, 
+                                       (int)(remaining_perishable_weight / perishable_weight));
+        
+        double additional_weight = additional_dry * dry_weight + additional_perishable * perishable_weight;
+        
+        if (additional_weight <= available_weight && (additional_dry > 0 || additional_perishable > 0)) {
+            new_drop.dry_food += additional_dry;
+            new_drop.perishable_food += additional_perishable;
+            
+            weight_to_drop += additional_weight;
+            value_gained += additional_dry * dry_value + additional_perishable * perishable_value;
+        }
+    }
     
-    if(choice == 0) {
-        return S1(current_solution);  // Add new trip
+    // Calculate net value increase
+    double cost_increase = helicopter.alpha * distance_extension;
+    double net_value_increase = value_gained - cost_increase;
+    
+    if (empty_trip) {
+        net_value_increase -= helicopter.fixed_cost;
+    }
+    
+    if (weight_to_drop > 0) {
+        return ExtResult(new_drop, net_value_increase, distance_extension);
     } else {
-        return S2(current_solution);  // Extend existing trip
+        return ExtResult({-1, 0, 0, 0}, -1e9, 0.0);
     }
 }
 
-Solution RANDOM_RESTART_LOCAL_SEARCH(){
-    srand(time(NULL)); // Initialize random seed
+
+bool find_best_extension(Trip& current_trip, Helicopter& helicopter,
+                                    ProblemData& problem, double percent) {
     
+    double max_value_increase = 0;
+    Drop best_drop = {-1, 0, 0, 0}; // Invalid drop initially
+    int best_village_id = -1;
+    ExtResult best_result = ExtResult({-1, 0, 0, 0}, 0.0, 0.0);
+    
+    unordered_set<int> temp;
+    for (const auto& drop : current_trip.drops) {
+        temp.insert(drop.village_id);    
+    } 
+    // Evaluate all villages
+    for (const auto& village : problem.villages) {
+        // Skip if already visited in this trip
+        bool already_visited = false;
+        if (temp.find(village.id)!=temp.end()){
+            already_visited=true;
+        }
+        if (already_visited) continue;
+        
+        // Evaluate this extension
+        auto result = evaluate_extension(
+            current_trip, helicopter, village, problem, percent);
+        
+        auto potential_drop=result.drop;
+        auto value_increase=result.value_increase;
+        if (value_increase > max_value_increase) {
+            max_value_increase = value_increase;
+            best_drop = potential_drop;
+            best_village_id = village.id;
+            best_result=result;
+        }
+    }
+    bool ret=false;
+    if (best_village_id == -1) {
+        return ret; // No valid extension found
+    }
+
+    current_trip.distance_covered+=best_result.distance_extension;
+    // current_trip.weight_carried+=best_result.weight_dropped;
+    helicopter.total_distance_covered+=best_result.distance_extension;
+    problem.villages[best_village_id-1].food_needed-= (best_drop.dry_food + best_drop.perishable_food);
+    problem.villages[best_village_id-1].other_supplies_needed-= best_drop.other_supplies;
+    current_trip.dry_food_pickup += best_drop.dry_food;
+    current_trip.perishable_food_pickup += best_drop.perishable_food;  
+    current_trip.other_supplies_pickup += best_drop.other_supplies;
+    if(current_trip.drops.empty()){
+        ret=true;
+    }
+    current_trip.drops.push_back(best_drop);
+
+
+    // Helper function to compute total weight for a trip
+    auto compute_trip_weight = [](const Trip &trip, const ProblemData &problem) {
+        double total_weight = 0.0;
+
+        total_weight += trip.dry_food_pickup * problem.packages[0].weight + trip.perishable_food_pickup * problem.packages[1].weight + trip.other_supplies_pickup * problem.packages[2].weight;
+        
+        return total_weight;
+    };
+
+    current_trip.weight_carried = compute_trip_weight(current_trip, problem);
+    return ret;
+
+}
+
+void S1(Solution& solution, ProblemData& problem, vector<double> ratio_arr ){
+    // extend a trip function
+    // selecting a random helicopter
+    int heli_index = rand() % problem.helicopters.size();
+    auto& heli_plan = solution[heli_index];
+    auto& helicopter = problem.helicopters[heli_index];
+    // selecting a random trip
+    int trip_index = rand() % heli_plan.trips.size();
+    auto& trip = heli_plan.trips[trip_index];
+    double percent = ratio_arr[heli_index];
+    bool create= find_best_extension(trip, helicopter, problem, percent);
+    if (create){
+        Trip empty_trip = {
+                            0,              // dry_food_pickup
+                            0,              // perishable_food_pickup
+                            0,              // other_supplies_pickup
+                            {},             // drops (empty vector)
+                            0.0,            // distance_covered
+                            0.0             // weight_carried
+};
+
+        heli_plan.trips.push_back(empty_trip);
+    }
+}
+
+
+void SUCCESSOR_FUNCTION(Solution& solution, ProblemData& problem, vector<double> ratio_arr ){
+    // choosing a random successor function
+    S1(solution, problem, ratio_arr);
+
+}
+
+
+
+double computeTemperature(double deltaV,
+                          double p0, double pend,
+                          chrono::high_resolution_clock::time_point start,
+                          chrono::high_resolution_clock::time_point end,
+                          chrono::high_resolution_clock::time_point now) {
+    // Initial and final temperatures from ΔV and acceptance probabilities
+    double T0   = -deltaV / log(p0);
+    double Tend = -deltaV / log(pend);
+
+    // Total time (seconds)
+    chrono::duration<double> total = end - start;
+    chrono::duration<double> elapsed = now - start;
+
+    double frac = elapsed / total; // progress fraction [0,1]
+
+    // Exponential cooling schedule
+    // T(t) = T0 * (Tend / T0)^frac
+    double T = T0 * pow(Tend / T0, frac);
+
+    return T;
+}
+
+
+
+// using list = vector<int>;
+
+Solution RANDOM_RESTART_LOCAL_SEARCH(ProblemData& problem,
+    std::chrono::time_point<std::chrono::high_resolution_clock> start_time,
+    std::chrono::time_point<std::chrono::high_resolution_clock, std::chrono::duration<double>> end_time)
+{
     Solution best_solution;
     double best_value = -1e18;
+    const int helios=problem.helicopters.size();
+    std::vector<double> ratio_list(helios,1.0), old_ratio_list(helios,1.0);
+    std::vector<double> best_ratio_list(helios, 0.0);
+    int restarts = 1;
+    bool improved=false; 
+    double Vmax;
+    double Vmin;
+    double delV=1e9;
+    double current_value=-1e18;
+    std::chrono::high_resolution_clock::time_point end_time2 = std::chrono::time_point_cast<std::chrono::high_resolution_clock::duration>(end_time);
     
-    // Time-based termination (run for a reasonable time)
-    auto start_time = chrono::steady_clock::now();
-    auto max_duration = chrono::seconds(int(PROBLEM.time_limit_minutes * 60 * 0.8)); // Use 80% of time limit
-    
-    int restart_count = 0;
-    
-    while(chrono::steady_clock::now() - start_time < max_duration && restart_count < 100) {
-        Solution current_solution = GET_A_RANDOM_STATE();
-        double current_value = EVALUATE_COST_OF_SOLUTION(current_solution);
+    bool is_empty_peak = false;
+    while (std::chrono::high_resolution_clock::now() < end_time){ //
+        // cout<<restarts;
         
-        // Local search
-        bool improved = true;
-        int local_iterations = 0;
-        while(improved && local_iterations < 50) { // Limit local search iterations
-            improved = false;
-            
-            // Try multiple neighbors
-            for(int i = 0; i < 5; i++) {
-                Solution neighbor = SUCCESSOR_FUNCTION(current_solution);
-                double neighbor_value = EVALUATE_COST_OF_SOLUTION(neighbor);
-                
-                if(neighbor_value > current_value) {
-                    current_solution = neighbor;
-                    current_value = neighbor_value;
-                    improved = true;
-                    break;
+        
+        if (!improved){
+
+            if (restarts>12){
+                if (restarts==13){
+                    start_time=std::chrono::high_resolution_clock::now();
+                }
+                double Temperature = computeTemperature(delV, 0.8, 0.01,
+                                                start_time, end_time2, std::chrono::high_resolution_clock::now());
+
+                // ΔE = how much worse the new solution is compared to best
+                double deltaE = current_value - best_value;
+                if (deltaE < 0) { 
+                    // Acceptance probability
+                    double p = exp(deltaE / Temperature);
+                    // Draw random [0,1]
+                    double r = (double) rand() / RAND_MAX;
+                    ratio_list=old_ratio_list;
+                    if (r < p) {
+                    } else {
+                        ratio_list = old_ratio_list;
+                    }
                 }
             }
-            local_iterations++;
+            else{
+                ratio_list=old_ratio_list;
+            }
+            
+        }
+
+        if (restarts==2){
+            ratio_list.assign(helios, 0.9);
+            Vmax=current_value;
+            Vmin=current_value;
+        }
+        // if (restarts==3){
+        //     ratio_list.assign(helios, 0.0);
+        //     if (current_value> Vmax){
+        //         Vmax= current_value;
+        //     }
+        //     if (current_value< Vmin){
+        //         Vmin= current_value;
+        //     }
+        // }
+        if (restarts<=11 && restarts>2){
+            ratio_list.assign(helios, 1.0-0.1*(restarts-1));
+            if (current_value> Vmax){
+                Vmax= current_value;
+            }
+            if (current_value< Vmin){
+                Vmin= current_value;
+            }
+        }
+        if (restarts==12){
+            if (current_value> Vmax){
+                Vmax= current_value;
+            }
+            if (current_value< Vmin){
+                Vmin= current_value;
+            }
+            delV=Vmax-Vmin;
+            
         }
         
-        if(current_value > best_value) {
-            best_value = current_value;
-            best_solution = current_solution;
-            cout << "New best solution found with value: " << best_value << endl;
+        if (restarts>=12){
+            int rat_index = rand() % helios;
+            double new_ratio = dist(gen);
+            old_ratio_list = ratio_list;
+            ratio_list[rat_index]=new_ratio;
+        } 
+        RESET_PROBLEM(problem);
+        Solution current_solution;
+
+        current_solution = GET_RANDOM_STATE(problem,restarts,ratio_list,is_empty_peak);
+
+        current_value = EVALUATE_VALUE(problem, current_solution);
+        int a=(250*int(problem.villages.size()+ problem.helicopters.size()));
+        int local_iterations = a;
+        improved=false;
+        while(local_iterations-- && std::chrono::high_resolution_clock::now() < end_time) {
+            SUCCESSOR_FUNCTION(current_solution, problem, ratio_list);        
+
+            current_value = EVALUATE_VALUE(problem, current_solution);
+            if (current_value > best_value) {
+                
+                best_value = current_value;
+                improved=true;
+                best_solution = current_solution;
+                best_ratio_list = ratio_list;
+                local_iterations = a; // Reset local iterations on improvement
+            }
+        }
+
+        if(restarts==1){
+            // getting the random soultion constarins for each helicopter
+            UPDATE_RANDOM_STATS(problem, current_solution);
+        }
+        if(best_value==0 && restarts>TOT_HELICOPTERS){
+            // still best is zero mean zero state is the best state..
+            // lets try i will try again with randowm assigning near villages
+            is_empty_peak = true;
         }
         
-        restart_count++;
+        restarts++;
+        // cout<<best_value<<": ";
+        // for (auto&e:best_ratio_list){
+        //     cout << e << " "; 
+        // }
+        // cout<<"\n";
+        // if (restarts==11) break;
     }
+
+    // Remove empty trips from the solution
+    for (auto& heli_plan : best_solution) {
+        heli_plan.trips.erase(
+            std::remove_if(heli_plan.trips.begin(), heli_plan.trips.end(),
+                [](const Trip& trip) {
+                    // Remove trips with zero pickups and no drops
+                    return (trip.dry_food_pickup == 0 && 
+                            trip.perishable_food_pickup == 0 && 
+                            trip.other_supplies_pickup == 0 && 
+                            trip.drops.empty());
+                }),
+            heli_plan.trips.end()
+        );
+    }
+    // cout<<"PreBoost: "<<EVALUATE_VALUE(problem, best_solution)<<"\n";
+    RESET_PROBLEM_WITH_THIS_SOLUTION(best_solution, problem);
+    BOOSTER_FUNCTION(best_solution, problem);
+    // cout<<"AfterBoost: "<<EVALUATE_VALUE(problem, best_solution)<<"\n";
     
-    cout << "Random restart completed with " << restart_count << " restarts" << endl;
     return best_solution;
 }
 
+Solution solve(ProblemData& problem) {
+    auto start_time = std::chrono::high_resolution_clock::now();
+    double seconds = 60.0 * problem.time_limit_minutes-2; //
+    auto time_limit = std::chrono::duration<double>(seconds);
+    auto end_time= time_limit+start_time;
 
-Solution solve(const ProblemData& problem) {
+    TOT_VILLAGES=problem.villages.size();
+    TOT_HELICOPTERS=problem.helicopters.size();
+    D_MAX=problem.d_max;
+    DRY_WT=problem.packages[0].weight;
+    DRY_VAL=problem.packages[0].value;
+    WET_WT=problem.packages[1].weight;
+    WET_VAL=problem.packages[1].value;
+    OTHER_WT=problem.packages[2].weight;
+    OTHER_VAL=problem.packages[2].value;
+
     cout << "Starting solver..." << endl;
+    RESET_PROBLEM(problem);
+    RAND_INIT_STATS.resize(problem.helicopters.size());
+    Solution solution; 
     
-    // Initialize global variables
-    DRY_VAL = problem.packages[0].value;
-    WET_VAL = problem.packages[1].value;
-    OTHER_VAL = problem.packages[2].value;
-    DRY_WEIGHT = problem.packages[0].weight;
-    WET_WEIGHT = problem.packages[1].weight;
-    OTHER_WEIGHT = problem.packages[2].weight;
-    MAX_DIST_OF_EACH_HELI = problem.d_max;
-    MAX_DIST_OF_EACH_HELI-=1;
-    NUM_HELICOPTERS = problem.helicopters.size();
-    NUM_VILLAGES = problem.villages.size();
-    NUM_CITIES = problem.cities.size();
-    PROBLEM = problem;
+    solution = RANDOM_RESTART_LOCAL_SEARCH(problem,start_time,end_time);
+    cout<<"Value of solution: "<<EVALUATE_VALUE(problem, solution)<<endl;
     
-    cout << "Problem parameters:" << endl;
-    cout << "Villages: " << NUM_VILLAGES << ", Helicopters: " << NUM_HELICOPTERS << endl;
-    cout << "Package values (dry, wet, other): " << DRY_VAL << ", " << WET_VAL << ", " << OTHER_VAL << endl;
-    cout << "Package weights (dry, wet, other): " << DRY_WEIGHT << ", " << WET_WEIGHT << ", " << OTHER_WEIGHT << endl;
-    cout << "Max distance per helicopter: " << MAX_DIST_OF_EACH_HELI << endl;
+    // Check feasibility of the solution
+    // IS_FEASIBLE(solution, problem);
     
-    // Debug: print cities and helicopters
-    cout << "Cities: ";
-    for(size_t i = 0; i < PROBLEM.cities.size(); i++) {
-        cout << i << ":(" << PROBLEM.cities[i].x << "," << PROBLEM.cities[i].y << ") ";
-    }
-    cout << endl;
-    cout << "Helicopters: ";
-    for(size_t i = 0; i < PROBLEM.helicopters.size(); i++) {
-        cout << "ID:" << PROBLEM.helicopters[i].id << " home_city:" << PROBLEM.helicopters[i].home_city_id << " ";
-    }
-    cout << endl;
-    
-    // Use random restart local search
-    Solution solution = RANDOM_RESTART_LOCAL_SEARCH();
-    
-    cout << "Final solution value: " << EVALUATE_COST_OF_SOLUTION(solution) << endl;
     cout << "Solver finished." << endl;
     return solution;
 }
+
+ 

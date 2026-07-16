@@ -17,9 +17,10 @@ struct Point {
  * @brief Calculates the Euclidean distance between two points.
  */
 inline double distance(const Point& p1, const Point& p2) {
-    return sqrt(pow(p1.x - p2.x, 2) + pow(p1.y - p2.y, 2));
-}
-
+    double dx = p1.x - p2.x;
+    double dy = p1.y - p2.y;
+    return sqrt(dx*dx + dy*dy);
+} 
 
 // --- PROBLEM & SOLUTION STRUCTURES (remaining definitions are the same) ---
 
@@ -31,21 +32,28 @@ struct Village {
     int id;
     Point coords;
     int population;
-    int meal_need;    // Total meals needed (approximately 9 per person)
-    int other_need;   // Other supplies needed (approximately 1 per person)
+    
+    // Additional members for tracking remaining needs
+    int food_needed;
+    int other_supplies_needed;
+    Village() =default;
+    Village(int id, Point coords, int population) 
+        : id(id), coords(coords), population(population) {
+        // Assume 1 unit per person for each type (adjust as needed)
+        food_needed = 9*population;
+        other_supplies_needed = population;
+    }
 };
+
 
 struct Helicopter {
     int id;
     int home_city_id;
     double weight_capacity;
     double distance_capacity;
-    double distance_travelled;
-    int remaining_dry;
-    int remaining_wet;
-    int remaining_other;
     double fixed_cost; // F
     double alpha;
+    double total_distance_covered;
 };
 
 struct ProblemData {
@@ -68,13 +76,13 @@ struct Trip {
     int dry_food_pickup;
     int perishable_food_pickup;
     int other_supplies_pickup;
-    double dist_travelled;
     vector<Drop> drops;
+    double distance_covered;
+    double weight_carried;
 };
 
 struct HelicopterPlan {
-    int helicopter_id; 
-    
+    int helicopter_id;
     vector<Trip> trips;
 };
 
